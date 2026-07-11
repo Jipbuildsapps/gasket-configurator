@@ -1,0 +1,875 @@
+window.GasketConfiguratorNesting = (function () {
+  function num(v, fallback) {
+    var n = Number(String(v).replace(',', '.'));
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function dist(a, x, y) {
+    var dx = x - a.x;
+    var dy = y - a.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function isCirclePiece(piece) {
+    return (piece && (piece.shape || 'circle')) === 'circle';
+  }
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function piecesOverlap(a, ax, ay, b, bx, by, gap) {
+    var eps = 0.001;
+    gap = Math.max(0, gap || 0);
+
+    if (isCirclePiece(a) && isCirclePiece(b)) {
+      return Math.sqrt(Math.pow(ax - bx, 2) + Math.pow(ay - by, 2)) < a.r + b.r + gap - eps;
+    }
+
+    if (!isCirclePiece(a) && !isCirclePiece(b)) {
+      return (
+        Math.abs(ax - bx) < a.halfW + b.halfW + gap - eps &&
+        Math.abs(ay - by) < a.halfH + b.halfH + gap - eps
+      );
+    }
+
+    var circle = isCirclePiece(a)
+      ? { piece: a, x: ax, y: ay }
+      : { piece: b, x: bx, y: by };
+    var rect = isCirclePiece(a)
+      ? { piece: b, x: bx, y: by }
+      : { piece: a, x: ax, y: ay };
+    var closestX = clamp(circle.x, rect.x - rect.piece.halfW, rect.x + rect.piece.halfW);
+    var closestY = clamp(circle.y, rect.y - rect.piece.halfH, rect.y + rect.piece.halfH);
+    var dx = circle.x - closestX;
+    var dy = circle.y - closestY;
+
+    return Math.sqrt(dx * dx + dy * dy) < circle.piece.r + gap - eps;
+  }
+
+  function normalizeOptions(options) {
+    options = options || {};
+
+    var materialMode = options.materialMode || options.remainderMode || 'full_plate';
+
+    if (materialMode === 'charge') materialMode = 'full_plate';
+    if (materialMode === 'discard') materialMode = 'used_strip';
+
+    return {
+      materialMode: materialMode,
+      wasteThresholdPct: Math.max(0, num(options.wasteThresholdPct, 30)),
+      forceBottomRemainderWaste: materialMode === 'used_strip',
+      markBottomRemainder: options.markBottomRemainder !== false
+    };
+  }
+
+  function expandPieces(items) {
+    var pieces = [];
+
+    items.forEach(function (it, itemIndex) {
+      var qty = Math.max(0, Math.floor(num(it.qty, 0)));
+      var od = num(it.od, 0);
+      var id = num(it.id, 0);
+      var width = num(it.outerW, od);
+      var height = num(it.outerH, od);
+
+      for (var i = 0; i < qty; i++) {
+        pieces.push({
+          item: it,
+          itemIndex: itemIndex,
+          shape: it.shape || 'circle',
+          od: od,
+          r: od / 2,
+          width: width,
+          height: height,
+          halfW: width / 2,
+          halfH: height / 2,
+          id: id,
+          innerR: (it.shape || 'circle') === 'circle' ? id / 2 : 0,
+          pcd: num(it.pcd, 0),
+          holes: Math.max(0, Math.floor(num(it.holes, 0))),
+          holeDia: num(it.holeDia, 0),
+          x: 0,
+          y: 0,
+          placedInHole: false
+        });
+      }
+    });
+
+    pieces.sort(function (a, b) {
+      var aMax = Math.max(a.width, a.height);
+      var bMax = Math.max(b.width, b.height);
+      var aArea = a.width * a.height;
+      var bArea = b.width * b.height;
+
+      if (bMax !== aMax) return bMax - aMax;
+      if (bArea !== aArea) return bArea - aArea;
+      return a.itemIndex - b.itemIndex;
+    });
+
+    return pieces;
+  }
+
+  function createPlate() {
+    return { placed: [] };
+  }
+
+  function pieceFitsPlate(piece, W, H, edge) {
+    if (!piece || !(piece.width > 0) || !(piece.height > 0)) return false;
+
+    return (
+      piece.width + edge * 2 <= W + 0.001 &&
+      piece.height + edge * 2 <= H + 0.001
+    );
+  }
+
+  function isInsideHostHole(host, piece, x, y, gap) {
+    if (!host || !(host.innerR > 0)) return false;
+    if (!isCirclePiece(host) || !isCirclePiece(piece)) return false;
+    return dist(host, x, y) + piece.r + gap <= host.innerR + 0.001;
+  }
+
+  function findHostHole(plate, piece, x, y, gap) {
+    for (var i = 0; i < plate.placed.length; i++) {
+      var host = plate.placed[i];
+      if (isInsideHostHole(host, piece, x, y, gap)) return host;
+    }
+
+    return null;
+  }
+
+  function canPlaceAt(plate, piece, x, y, W, H, edge, gap) {
+    var eps = 0.001;
+
+    if (!pieceFitsPlate(piece, W, H, edge)) return false;
+
+    if (x - piece.halfW < edge - eps) return false;
+    if (x + piece.halfW > W - edge + eps) return false;
+    if (y - piece.halfH < edge - eps) return false;
+    if (y + piece.halfH > H - edge + eps) return false;
+
+    var hostHole = findHostHole(plate, piece, x, y, gap);
+
+    for (var i = 0; i < plate.placed.length; i++) {
+      var other = plate.placed[i];
+
+      if (hostHole === other) continue;
+
+      if (piecesOverlap(other, other.x, other.y, piece, x, y, gap)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function pushCandidate(out, seen, x, y, score, inHole) {
+    var key = Math.round(x * 10) + ':' + Math.round(y * 10);
+    if (seen[key]) return;
+
+    seen[key] = true;
+
+    out.push({
+      x: x,
+      y: y,
+      score: score,
+      inHole: !!inHole
+    });
+  }
+
+  function candidatePositions(plate, piece, W, H, edge, gap) {
+    var out = [];
+    var seen = {};
+
+    var minX = edge + piece.halfW;
+    var maxX = W - edge - piece.halfW;
+    var minY = edge + piece.halfH;
+    var maxY = H - edge - piece.halfH;
+
+    if (minX > maxX || minY > maxY) return out;
+
+    plate.placed.forEach(function (host) {
+      if (!isCirclePiece(host) || !isCirclePiece(piece)) return;
+      if (!(host.innerR > 0)) return;
+      if (piece.r + gap > host.innerR + 0.001) return;
+
+      pushCandidate(out, seen, host.x, host.y, -1000000000 + host.y * W + host.x, true);
+
+      var ring = host.innerR - piece.r - gap;
+
+      if (ring > 0.001) {
+        for (var i = 0; i < 8; i++) {
+          var a = Math.PI * 2 * i / 8;
+
+          pushCandidate(
+            out,
+            seen,
+            host.x + Math.cos(a) * ring,
+            host.y + Math.sin(a) * ring,
+            -900000000 + host.y * W + host.x,
+            true
+          );
+        }
+      }
+    });
+
+    plate.placed.forEach(function (other) {
+      if (isCirclePiece(other) && isCirclePiece(piece)) {
+        var touch = other.r + piece.r + gap;
+        var angles = [
+          0,
+          Math.PI / 6,
+          Math.PI / 4,
+          Math.PI / 3,
+          Math.PI / 2,
+          2 * Math.PI / 3,
+          3 * Math.PI / 4,
+          5 * Math.PI / 6,
+          Math.PI,
+          7 * Math.PI / 6,
+          5 * Math.PI / 4,
+          4 * Math.PI / 3,
+          3 * Math.PI / 2,
+          5 * Math.PI / 3,
+          7 * Math.PI / 4,
+          11 * Math.PI / 6
+        ];
+
+        for (var i = 0; i < angles.length; i++) {
+          var a = angles[i];
+
+          pushCandidate(
+            out,
+            seen,
+            other.x + Math.cos(a) * touch,
+            other.y + Math.sin(a) * touch,
+            other.y * W + other.x,
+            false
+          );
+        }
+
+        return;
+      }
+
+      var dx = other.halfW + piece.halfW + gap;
+      var dy = other.halfH + piece.halfH + gap;
+      var touchPoints = [
+        { x: other.x + dx, y: other.y },
+        { x: other.x - dx, y: other.y },
+        { x: other.x, y: other.y + dy },
+        { x: other.x, y: other.y - dy },
+        { x: other.x + dx, y: other.y + dy },
+        { x: other.x - dx, y: other.y + dy },
+        { x: other.x + dx, y: other.y - dy },
+        { x: other.x - dx, y: other.y - dy }
+      ];
+
+      touchPoints.forEach(function (p) {
+        pushCandidate(out, seen, p.x, p.y, p.y * W + p.x, false);
+      });
+    });
+
+    var stepX = piece.width + gap;
+    var stepY = piece.height + gap;
+    if (stepX <= 0) stepX = piece.width;
+    if (stepY <= 0) stepY = piece.height;
+
+    for (var y1 = minY; y1 <= maxY + 0.001; y1 += stepY) {
+      for (var x1 = minX; x1 <= maxX + 0.001; x1 += stepX) {
+        pushCandidate(out, seen, x1, y1, y1 * W + x1, false);
+      }
+    }
+
+    var staggerStepX = piece.width + gap;
+    var staggerStepY = (piece.height + gap) * 0.8660254038;
+
+    if (staggerStepX > 0 && staggerStepY > 0) {
+      var row = 0;
+
+      for (var y2 = minY; y2 <= maxY + 0.001; y2 += staggerStepY) {
+        var offset = row % 2 ? staggerStepX / 2 : 0;
+
+        for (var x2 = minX + offset; x2 <= maxX + 0.001; x2 += staggerStepX) {
+          pushCandidate(out, seen, x2, y2, y2 * W + x2 - 1000, false);
+        }
+
+        row++;
+      }
+    }
+
+    pushCandidate(out, seen, minX, minY, minY * W + minX, false);
+    pushCandidate(out, seen, maxX, minY, minY * W + maxX, false);
+    pushCandidate(out, seen, minX, maxY, maxY * W + minX, false);
+    pushCandidate(out, seen, maxX, maxY, maxY * W + maxX, false);
+
+    out.sort(function (a, b) {
+      if (a.inHole !== b.inHole) return a.inHole ? -1 : 1;
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.y !== b.y) return a.y - b.y;
+      return a.x - b.x;
+    });
+
+    return out;
+  }
+
+  function boundsAfterPlace(plate, piece, x, y) {
+    var minX = x - piece.halfW;
+    var minY = y - piece.halfH;
+    var maxX = x + piece.halfW;
+    var maxY = y + piece.halfH;
+
+    plate.placed.forEach(function (p) {
+      minX = Math.min(minX, p.x - p.halfW);
+      minY = Math.min(minY, p.y - p.halfH);
+      maxX = Math.max(maxX, p.x + p.halfW);
+      maxY = Math.max(maxY, p.y + p.halfH);
+    });
+
+    return {
+      width: maxX - minX,
+      height: maxY - minY,
+      area: Math.max(0, maxX - minX) * Math.max(0, maxY - minY)
+    };
+  }
+
+  function findBestPlacementOnPlate(plate, piece, W, H, edge, gap) {
+    var candidates = candidatePositions(plate, piece, W, H, edge, gap);
+    var best = null;
+
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+
+      if (!canPlaceAt(plate, piece, c.x, c.y, W, H, edge, gap)) continue;
+
+      var inHole = !!findHostHole(plate, piece, c.x, c.y, gap);
+      var b = boundsAfterPlace(plate, piece, c.x, c.y);
+
+      var score =
+        b.area +
+        b.height * W * 0.25 +
+        c.y * W * 0.01 +
+        c.x * 0.01;
+
+      if (inHole) score -= W * H * 10;
+
+      if (!best || score < best.score) {
+        best = {
+          x: c.x,
+          y: c.y,
+          score: score,
+          inHole: inHole
+        };
+      }
+    }
+
+    return best;
+  }
+
+  function clonePieceAt(piece, x, y, inHole) {
+    return {
+      item: piece.item,
+      itemIndex: piece.itemIndex,
+      shape: piece.shape,
+      od: piece.od,
+      r: piece.r,
+      width: piece.width,
+      height: piece.height,
+      halfW: piece.halfW,
+      halfH: piece.halfH,
+      id: piece.id,
+      innerR: piece.innerR,
+      pcd: piece.pcd,
+      holes: piece.holes,
+      holeDia: piece.holeDia,
+      x: x,
+      y: y,
+      placedInHole: !!inHole
+    };
+  }
+
+  function usedStripFromPlaced(placed, W, H, edge) {
+    if (!placed || !placed.length) {
+      return {
+        minX: 0,
+        minY: 0,
+        maxX: 0,
+        maxY: 0,
+        width: 0,
+        height: 0,
+        areaMm2: 0
+      };
+    }
+
+    var minY = Infinity;
+    var maxY = -Infinity;
+
+    placed.forEach(function (p) {
+      var halfH = Number(p.halfH || p.height / 2 || p.r || p.od / 2 || 0);
+
+      minY = Math.min(minY, p.y - halfH - edge);
+      maxY = Math.max(maxY, p.y + halfH + edge);
+    });
+
+    minY = Math.max(0, minY);
+    maxY = Math.min(H, maxY);
+
+    return {
+      minX: 0,
+      minY: minY,
+      maxX: W,
+      maxY: maxY,
+      width: W,
+      height: Math.max(0, maxY - minY),
+      areaMm2: W * Math.max(0, maxY - minY)
+    };
+  }
+
+  function makeRowsFromPlaced(placed, gap) {
+    var rows = [];
+
+    placed.forEach(function (p) {
+      var halfH = Number(p.halfH || p.height / 2 || p.r || p.od / 2 || 0);
+      var top = p.y - halfH;
+      var bottom = p.y + halfH;
+      var center = p.y;
+
+      var bestRow = null;
+      var bestDistance = Infinity;
+
+      for (var i = 0; i < rows.length; i++) {
+        var d = Math.abs(rows[i].center - center);
+
+        if (d < bestDistance && d <= Math.max(10, halfH + gap)) {
+          bestRow = rows[i];
+          bestDistance = d;
+        }
+      }
+
+      if (!bestRow) {
+        bestRow = {
+          center: center,
+          minY: top,
+          maxY: bottom,
+          pieces: []
+        };
+
+        rows.push(bestRow);
+      }
+
+      bestRow.pieces.push(p);
+      bestRow.minY = Math.min(bestRow.minY, top);
+      bestRow.maxY = Math.max(bestRow.maxY, bottom);
+
+      bestRow.center =
+        bestRow.pieces.reduce(function (sum, piece) {
+          return sum + piece.y;
+        }, 0) / bestRow.pieces.length;
+    });
+
+    rows.sort(function (a, b) {
+      return a.minY - b.minY;
+    });
+
+    return rows;
+  }
+
+  function analyzePlate(placed, W, H, edge, gap, options) {
+    var opts = normalizeOptions(options);
+    var strip = usedStripFromPlaced(placed, W, H, edge);
+    var rows = makeRowsFromPlaced(placed || [], gap || 0);
+    var wasteRects = [];
+    var rowLines = [];
+
+    if (!placed || !placed.length) {
+      return {
+        strip: strip,
+        rows: [],
+        wasteRects: [],
+        rowLines: [],
+        bottomRemainder: {
+          x: 0,
+          y: 0,
+          width: W,
+          height: H,
+          areaMm2: W * H,
+          isWaste: false,
+          isCharged: false
+        }
+      };
+    }
+
+    rows.forEach(function (row) {
+      var y1 = Math.max(0, row.minY - edge);
+      var y2 = Math.min(H, row.maxY + edge);
+
+      rowLines.push({
+        x1: 0,
+        y1: y1,
+        x2: W,
+        y2: y1,
+        type: 'row-top'
+      });
+
+      rowLines.push({
+        x1: 0,
+        y1: y2,
+        x2: W,
+        y2: y2,
+        type: 'row-bottom'
+      });
+    });
+
+    var bottomRemainderHeight = Math.max(0, H - strip.maxY);
+    var thresholdHeight = H * (opts.wasteThresholdPct / 100);
+
+    var shouldMarkBottomRemainder =
+      opts.markBottomRemainder &&
+      bottomRemainderHeight > 0.001 &&
+      (
+        opts.forceBottomRemainderWaste ||
+        bottomRemainderHeight <= thresholdHeight
+      );
+
+    var bottomRemainder = {
+      x: 0,
+      y: strip.maxY,
+      width: W,
+      height: bottomRemainderHeight,
+      areaMm2: W * bottomRemainderHeight,
+      isWaste: shouldMarkBottomRemainder,
+      isCharged: opts.materialMode === 'full_plate'
+    };
+
+    if (shouldMarkBottomRemainder) {
+      wasteRects.push({
+        x: 0,
+        y: strip.maxY,
+        width: W,
+        height: bottomRemainderHeight,
+        areaMm2: W * bottomRemainderHeight,
+        reason: opts.forceBottomRemainderWaste
+          ? 'bottom-remainder-discarded-by-setting'
+          : 'bottom-remainder-under-threshold',
+        isBottomRemainder: true,
+        isCharged: opts.materialMode === 'full_plate',
+        materialMode: opts.materialMode
+      });
+
+      rowLines.push({
+        x1: 0,
+        y1: strip.maxY,
+        x2: W,
+        y2: strip.maxY,
+        type: 'bottom-remainder-start'
+      });
+    }
+
+    return {
+      strip: strip,
+      rows: rows,
+      wasteRects: wasteRects,
+      rowLines: rowLines,
+      bottomRemainder: bottomRemainder
+    };
+  }
+
+  function packMixedSmart(items, W, H, edge, gap, options) {
+    W = num(W, 0);
+    H = num(H, 0);
+    edge = Math.max(0, num(edge, 0));
+    gap = Math.max(0, num(gap, 0));
+
+    var pieces = expandPieces(items);
+    var plates = [];
+    var notFit = [];
+
+    pieces.forEach(function (piece) {
+      if (!pieceFitsPlate(piece, W, H, edge)) {
+        notFit.push(piece);
+        return;
+      }
+
+      var best = null;
+
+      for (var pi = 0; pi < plates.length; pi++) {
+        var placement = findBestPlacementOnPlate(plates[pi], piece, W, H, edge, gap);
+
+        if (!placement) continue;
+
+        var score = placement.score + pi * W * H * 0.001;
+
+        if (!best || score < best.score) {
+          best = {
+            plateIndex: pi,
+            placement: placement,
+            score: score
+          };
+        }
+      }
+
+      if (best) {
+        plates[best.plateIndex].placed.push(
+          clonePieceAt(piece, best.placement.x, best.placement.y, best.placement.inHole)
+        );
+
+        return;
+      }
+
+      var newPlate = createPlate();
+      var newPlacement = findBestPlacementOnPlate(newPlate, piece, W, H, edge, gap);
+
+      if (!newPlacement) {
+        notFit.push(piece);
+        return;
+      }
+
+      newPlate.placed.push(clonePieceAt(piece, newPlacement.x, newPlacement.y, false));
+      plates.push(newPlate);
+    });
+
+    plates.forEach(function (plate) {
+      plate.analysis = analyzePlate(plate.placed, W, H, edge, gap, options);
+      plate.wasteRects = plate.analysis.wasteRects;
+      plate.rowLines = plate.analysis.rowLines;
+    });
+
+    return {
+      mode: 'mixed',
+      strategy: 'simple-smart-nesting-bottom-remainder-aware',
+      plates: plates,
+      notFit: notFit,
+      totalPieces: pieces.length,
+      usedPlateCount: plates.filter(function (pl) {
+        return pl.placed && pl.placed.length;
+      }).length
+    };
+  }
+
+  function makeGrid(width, height, W, H, edge, gap) {
+    var out = [];
+    var halfW = width / 2;
+    var halfH = height / 2;
+    var stepX = width + gap;
+    var stepY = height + gap;
+
+    var minX = edge + halfW;
+    var maxX = W - edge - halfW;
+    var minY = edge + halfH;
+    var maxY = H - edge - halfH;
+
+    if (stepX <= 0 || stepY <= 0) return out;
+    if (minX > maxX || minY > maxY) return out;
+
+    for (var y = minY; y <= maxY + 0.001; y += stepY) {
+      for (var x = minX; x <= maxX + 0.001; x += stepX) {
+        out.push({ x: x, y: y });
+      }
+    }
+
+    return out;
+  }
+
+  function makeStaggered(width, height, W, H, edge, gap) {
+    var out = [];
+    var halfW = width / 2;
+    var halfH = height / 2;
+    var stepX = width + gap;
+    var stepY = (height + gap) * 0.8660254038;
+
+    var minX = edge + halfW;
+    var maxX = W - edge - halfW;
+    var minY = edge + halfH;
+    var maxY = H - edge - halfH;
+
+    if (stepX <= 0 || stepY <= 0) return out;
+    if (minX > maxX || minY > maxY) return out;
+
+    var row = 0;
+
+    for (var y = minY; y <= maxY + 0.001; y += stepY) {
+      var offset = row % 2 ? stepX / 2 : 0;
+
+      for (var x = minX + offset; x <= maxX + 0.001; x += stepX) {
+        out.push({ x: x, y: y });
+      }
+
+      row++;
+    }
+
+    return out;
+  }
+
+  function packSinglePattern(item, W, H, edge, gap, options) {
+    W = num(W, 0);
+    H = num(H, 0);
+    edge = Math.max(0, num(edge, 0));
+    gap = Math.max(0, num(gap, 0));
+
+    var qty = Math.max(0, Math.floor(num(item.qty, 0)));
+    var od = num(item.od, 0);
+    var width = num(item.outerW, od);
+    var height = num(item.outerH, od);
+
+    var grid = makeGrid(width, height, W, H, edge, gap);
+    var staggered = (item.shape || 'circle') === 'circle'
+      ? makeStaggered(width, height, W, H, edge, gap)
+      : [];
+
+    var positions = staggered.length > grid.length ? staggered : grid;
+    var layoutName = staggered.length > grid.length ? 'Versprongen patroon' : 'Rasterpatroon';
+
+    var perPlate = positions.length;
+
+    if (!(width > 0) || !(height > 0) || perPlate <= 0) {
+      return {
+        mode: 'single',
+        strategy: 'single-smart-pattern',
+        plates: [],
+        notFit: [{ item: item }],
+        totalPieces: qty,
+        usedPlateCount: 0,
+        perPlate: 0,
+        layout: {
+          name: layoutName,
+          positions: [],
+          gridCount: grid.length,
+          staggeredCount: staggered.length
+        }
+      };
+    }
+
+    var platesNeeded = Math.ceil(qty / perPlate);
+    var plates = [];
+
+    for (var pi = 0; pi < platesNeeded; pi++) {
+      var remaining = qty - pi * perPlate;
+      var usedCount = Math.min(perPlate, remaining);
+      var placed = [];
+
+      for (var i = 0; i < usedCount; i++) {
+        var pos = positions[i];
+
+        placed.push({
+          item: item,
+          itemIndex: 0,
+          shape: item.shape || 'circle',
+          od: od,
+          r: od / 2,
+          width: width,
+          height: height,
+          halfW: width / 2,
+          halfH: height / 2,
+          id: num(item.id, 0),
+          innerR: (item.shape || 'circle') === 'circle' ? num(item.id, 0) / 2 : 0,
+          pcd: num(item.pcd, 0),
+          holes: Math.max(0, Math.floor(num(item.holes, 0))),
+          holeDia: num(item.holeDia, 0),
+          x: pos.x,
+          y: pos.y,
+          placedInHole: false
+        });
+      }
+
+      var plate = {
+        placed: placed,
+        ghostPositions: positions.slice(usedCount),
+        usedCount: usedCount
+      };
+
+      plate.analysis = analyzePlate(plate.placed, W, H, edge, gap, options);
+      plate.wasteRects = plate.analysis.wasteRects;
+      plate.rowLines = plate.analysis.rowLines;
+
+      plates.push(plate);
+    }
+
+    return {
+      mode: 'single',
+      strategy: 'single-smart-pattern-bottom-remainder-aware',
+      plates: plates,
+      notFit: [],
+      totalPieces: qty,
+      usedPlateCount: plates.length,
+      perPlate: perPlate,
+      layout: {
+        name: layoutName,
+        positions: positions,
+        gridCount: grid.length,
+        staggeredCount: staggered.length
+      }
+    };
+  }
+
+  function totalMaterialArea(packing, W, H, edge, options) {
+    var opts = normalizeOptions(options);
+
+    if (!packing || !packing.plates) {
+      return {
+        fullPlates: 0,
+        chargedPlates: 0,
+        areaMm2: 0,
+        chargedAreaMm2: 0,
+        discardedAreaMm2: 0,
+        materialMode: opts.materialMode,
+        lastStrip: usedStripFromPlaced([], W, H, edge),
+        wasteRects: [],
+        rowLines: []
+      };
+    }
+
+    var usedPlates = packing.plates.filter(function (pl) {
+      return pl.placed && pl.placed.length;
+    });
+
+    var chargedAreaMm2 = 0;
+    var discardedAreaMm2 = 0;
+    var allWasteRects = [];
+    var allRowLines = [];
+    var plateAreaMm2 = Math.max(0, W * H);
+
+    usedPlates.forEach(function (plate) {
+      var analysis = analyzePlate(plate.placed, W, H, edge, 0, opts);
+
+      plate.analysis = analysis;
+      plate.wasteRects = analysis.wasteRects;
+      plate.rowLines = analysis.rowLines;
+
+      if (opts.materialMode === 'used_strip') {
+        chargedAreaMm2 += analysis.strip.areaMm2;
+        discardedAreaMm2 += Math.max(0, W * H - analysis.strip.areaMm2);
+      } else {
+        chargedAreaMm2 += W * H;
+      }
+
+      allWasteRects = allWasteRects.concat(analysis.wasteRects || []);
+      allRowLines = allRowLines.concat(analysis.rowLines || []);
+    });
+
+    var lastPlate = usedPlates.length ? usedPlates[usedPlates.length - 1] : null;
+
+    var lastAnalysis = lastPlate && lastPlate.analysis
+      ? lastPlate.analysis
+      : analyzePlate(lastPlate ? lastPlate.placed : [], W, H, edge, 0, opts);
+
+    return {
+      fullPlates: usedPlates.length,
+      chargedPlates: plateAreaMm2 > 0 ? chargedAreaMm2 / plateAreaMm2 : 0,
+      areaMm2: chargedAreaMm2,
+      chargedAreaMm2: chargedAreaMm2,
+      discardedAreaMm2: discardedAreaMm2,
+      materialMode: opts.materialMode,
+      lastStrip: lastAnalysis.strip,
+      bottomRemainder: lastAnalysis.bottomRemainder,
+      wasteRects: allWasteRects,
+      rowLines: allRowLines
+    };
+  }
+
+  return {
+    packSinglePattern: packSinglePattern,
+    packMixedSmart: packMixedSmart,
+    usedStripFromPlaced: usedStripFromPlaced,
+    totalMaterialArea: totalMaterialArea,
+    analyzePlate: analyzePlate
+  };
+})();
