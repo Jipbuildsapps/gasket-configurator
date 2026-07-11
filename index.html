@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pakking Configurator Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --preview-ink: #18201d;
+      --preview-muted: rgba(24, 32, 29, 0.68);
+      --preview-line: rgba(24, 32, 29, 0.12);
+      --preview-accent: #146a5b;
+      --preview-surface: #f5f7f4;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--preview-ink);
+      background: var(--preview-surface);
+    }
+
+    .previewTop {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px clamp(16px, 3vw, 32px);
+      border-bottom: 1px solid var(--preview-line);
+      background: rgba(245, 247, 244, 0.94);
+      backdrop-filter: blur(10px);
+    }
+
+    .previewTop strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .previewTop span {
+      display: block;
+      margin-top: 2px;
+      color: var(--preview-muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .previewStatus {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      color: var(--preview-accent);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .previewStatus::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--preview-accent);
+    }
+
+    main {
+      padding: 28px 0 44px;
+    }
+
+    @media (max-width: 720px) {
+      .previewTop {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .previewStatus {
+        white-space: normal;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="previewTop">
+    <div>
+      <strong>Pakking configurator preview</strong>
+      <span>Zelfde configuratorcode, met testvarianten in plaats van Shopify productdata.</span>
+    </div>
+    <div class="previewStatus">Live testomgeving</div>
+  </div>
+
+  <main>
+<link rel="stylesheet" href="./assets/gasket-configurator.css">
+<script src="./assets/gasket-configurator-nesting.js" defer></script>
+<script src="./assets/gasket-configurator-drawing.js" defer></script>
+<script src="./assets/gasket-configurator.js" defer></script>
+
+<div id="gasket-configurator-preview" class="gcfg" data-section-id="preview">
+  <script type="application/json" data-gasket-variants>
+[
+  {
+    "id": 1001,
+    "title": "BAU plaat - 3 mm",
+    "platePrice": 145,
+    "cutSpeed": 950
+  },
+  {
+    "id": 1002,
+    "title": "BAU plaat - 5 mm",
+    "platePrice": 185,
+    "cutSpeed": 780
+  },
+  {
+    "id": 1003,
+    "title": "BAU plaat - 10 mm",
+    "platePrice": 295,
+    "cutSpeed": 520
+  }
+]
+  </script>
+
+  <div class="gcfg__grid">
+    <div class="gcfg__form">
+      <div class="gcfg__intro">
+        <h3 class="gcfg__title">Prijs berekenen</h3>
+        <div class="gcfg__subtitle">Kies materiaal, vorm en maten. Klik daarna op prijs berekenen.</div>
+      </div>
+
+      <div class="gcfg__accordion">
+        <details class="gcfg__panel" open>
+          <summary class="gcfg__sectionTitle">
+            <span>1</span>
+            <strong>Materiaal & dikte</strong>
+            <small>Kies het materiaalproduct en de variant.</small>
+          </summary>
+
+          <div class="gcfg__row">
+            <label class="gcfg__label" for="gasket-configurator-preview-variant">Materiaal / dikte</label>
+            <select id="gasket-configurator-preview-variant" class="gcfg__input">
+                <option value="1001" selected>BAU plaat - 3 mm</option>
+                <option value="1002">BAU plaat - 5 mm</option>
+                <option value="1003">BAU plaat - 10 mm</option>
+            </select>
+            <div id="gasket-configurator-preview-variant-debug" class="gcfg__hint"></div>
+          </div>
+        </details>
+
+        <details class="gcfg__panel" open>
+          <summary class="gcfg__sectionTitle">
+            <span>2</span>
+            <strong>Vorm & maten</strong>
+            <small>Kies eerst de vorm; daarna vul je de bijbehorende maten in.</small>
+          </summary>
+
+          <div id="gasket-configurator-preview-items"></div>
+          <button id="gasket-configurator-preview-add-item" type="button" class="gcfg__btn gcfg__btn--secondary">+ Pakking toevoegen</button>
+        </details>
+
+        <details class="gcfg__panel">
+          <summary class="gcfg__sectionTitle">
+            <span>3</span>
+            <strong>Plaat & nesting</strong>
+            <small>Stel plaatmaat, randafstand en tussenruimte in.</small>
+          </summary>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-plateW">Plaatbreedte mm</label>
+              <input id="gasket-configurator-preview-plateW" class="gcfg__input" type="number" min="1" step="1" value="1500">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-plateH">Plaathoogte mm</label>
+              <input id="gasket-configurator-preview-plateH" class="gcfg__input" type="number" min="1" step="1" value="1500">
+            </div>
+          </div>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-edge">Randafstand mm</label>
+              <input id="gasket-configurator-preview-edge" class="gcfg__input" type="number" min="0" step="0.1" value="5">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-gap">Tussenruimte mm</label>
+              <input id="gasket-configurator-preview-gap" class="gcfg__input" type="number" min="0" step="0.1" value="5">
+            </div>
+          </div>
+        </details>
+
+        <details class="gcfg__panel">
+          <summary class="gcfg__sectionTitle">
+            <span>4</span>
+            <strong>Kosten</strong>
+            <small>Prijs per plaat, snijsnelheid, uurprijs, arbeid en marge.</small>
+          </summary>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-platePrice">Plaatprijs €</label>
+              <input id="gasket-configurator-preview-platePrice" class="gcfg__input" type="number" min="0" step="0.01" placeholder="uit variant">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-hourRate">Uurtarief €</label>
+              <input id="gasket-configurator-preview-hourRate" class="gcfg__input" type="number" min="0" step="0.01" value="75">
+            </div>
+          </div>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-cutSpeed">Snijsnelheid mm/min</label>
+              <input id="gasket-configurator-preview-cutSpeed" class="gcfg__input" type="number" min="1" step="1" placeholder="uit variant">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-setupMin">Setup minuten</label>
+              <input id="gasket-configurator-preview-setupMin" class="gcfg__input" type="number" min="0" step="0.1" value="1">
+            </div>
+          </div>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-kerf">Kerf/toeslag mm per contour</label>
+              <input id="gasket-configurator-preview-kerf" class="gcfg__input" type="number" min="0" step="0.1" value="1">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-pierceSec">Pierce seconden</label>
+              <input id="gasket-configurator-preview-pierceSec" class="gcfg__input" type="number" min="0" step="0.1" value="1">
+            </div>
+          </div>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-holeMethod">Bewerkingsmethode boutgaten</label>
+              <select id="gasket-configurator-preview-holeMethod" class="gcfg__input">
+                <option value="cut" selected>CNC snijden</option>
+                <option value="punch">Stansen</option>
+              </select>
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-punchSec">Stanstijd sec/gat</label>
+              <input id="gasket-configurator-preview-punchSec" class="gcfg__input" type="number" min="0" step="0.1" value="1">
+            </div>
+          </div>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-plateLoadMin">Plaat laden min</label>
+              <input id="gasket-configurator-preview-plateLoadMin" class="gcfg__input" type="number" min="0" step="0.1" value="1">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-plateUnloadMin">Plaat afruimen min</label>
+              <input id="gasket-configurator-preview-plateUnloadMin" class="gcfg__input" type="number" min="0" step="0.1" value="1">
+            </div>
+          </div>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-moveSec">Positioneren sec/contour</label>
+              <input id="gasket-configurator-preview-moveSec" class="gcfg__input" type="number" min="0" step="0.1" value="1">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-finishSec">Opruimen/sorteren sec/stuk</label>
+              <input id="gasket-configurator-preview-finishSec" class="gcfg__input" type="number" min="0" step="0.1" value="3">
+            </div>
+          </div>
+
+          <div class="gcfg__row gcfg__row--2">
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-marginPct">Marge/opslag %</label>
+              <input id="gasket-configurator-preview-marginPct" class="gcfg__input" type="number" min="0" step="0.1" value="150">
+            </div>
+            <div>
+              <label class="gcfg__label" for="gasket-configurator-preview-minOrder">Minimum orderbedrag €</label>
+              <input id="gasket-configurator-preview-minOrder" class="gcfg__input" type="number" min="0" step="0.01" value="100">
+            </div>
+          </div>
+
+          <div class="gcfg__row">
+            <label class="gcfg__label" for="gasket-configurator-preview-remainderMode">Restmateriaal</label>
+            <select id="gasket-configurator-preview-remainderMode" class="gcfg__input">
+              <option value="charge" selected>Meerekenen in materiaalprijs</option>
+              <option value="discard">Niet meerekenen / rood als restafval tonen</option>
+            </select>
+          </div>
+        </details>
+      </div>
+
+      <button id="gasket-configurator-preview-calc" type="button" class="gcfg__btn">Prijs berekenen</button>
+      <div id="gasket-configurator-preview-warn" class="gcfg__warn" aria-live="polite"></div>
+
+      <div id="gasket-configurator-preview-calcBox" class="gcfg__calc" hidden>
+        <div class="gcfg__calcGrid">
+          <div class="gcfg__calcCard">
+            <h4>Resultaat</h4>
+            <div id="gasket-configurator-preview-priceResult" class="gcfg__resultText"></div>
+          </div>
+
+          <div class="gcfg__calcCard">
+            <div class="gcfg__nestHead">
+              <h4>Plaatindeling</h4>
+              <div>Visuele nesting</div>
+            </div>
+            <svg id="gasket-configurator-preview-nestSvg" class="gcfg__nestSvg" role="img" aria-label="Plaatindeling"></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="gcfg__preview">
+      <div class="gcfg__card">
+        <div class="gcfg__head">
+          <strong>Live voorbeeld</strong>
+          <span class="gcfg__headSub">Geselecteerde pakking of getoonde plaat.</span>
+        </div>
+
+        <svg class="gcfg__svg" viewBox="0 0 640 560" role="img" aria-label="Pakking schema">
+          <path class="ringFill" fill="rgba(20,106,91,0.18)" stroke="rgba(20,106,91,0.72)" stroke-width="2"></path>
+          <path class="ringOuterPath"></path>
+          <path class="ringInnerPath"></path>
+          <circle class="ringOD" cx="0" cy="0" r="0"></circle>
+          <circle class="ringID" cx="0" cy="0" r="0"></circle>
+          <g class="holes"></g>
+          <circle class="pcdCircle" cx="0" cy="0" r="0"></circle>
+
+          <g class="dims">
+            <line class="dim-ext od-ext-l"></line>
+            <line class="dim-ext od-ext-r"></line>
+            <line class="dim-line od-line"></line>
+            <text class="dim-text od-text" text-anchor="middle"></text>
+
+            <line class="dim-ext id-ext-l"></line>
+            <line class="dim-ext id-ext-r"></line>
+            <line class="dim-line id-line"></line>
+            <text class="dim-text id-text" text-anchor="middle"></text>
+
+            <line class="dim-ext hole-ext-l"></line>
+            <line class="dim-ext hole-ext-r"></line>
+            <line class="dim-line hole-line"></line>
+            <text class="dim-text hole-text" text-anchor="middle"></text>
+
+            <line class="dim-ext pcd-ext-l"></line>
+            <line class="dim-ext pcd-ext-r"></line>
+            <line class="dim-line pcd-line"></line>
+            <text class="dim-text pcd-text" text-anchor="middle"></text>
+          </g>
+
+          <g class="thk">
+            <line class="thk-vert thk-left"></line>
+            <line class="thk-vert thk-right"></line>
+            <line class="thk-h thk-top"></line>
+            <line class="thk-h thk-bot"></line>
+            <line class="thk-h thk-id-top"></line>
+            <line class="thk-h thk-id-bot"></line>
+            <line class="thk-h thk-dim"></line>
+            <text class="dim-text thk-text" text-anchor="middle"></text>
+          </g>
+        </svg>
+
+        <p class="gcfg__hint">Tip: klik bij een pakkingregel op “Voorbeeld” om die pakking rechts te tonen.</p>
+        <div id="gasket-configurator-preview-svgWarn" class="gcfg__warn" aria-live="polite"></div>
+
+        <div class="gcfg__downloadGrid">
+          <button id="gasket-configurator-preview-download-dxf" type="button" class="gcfg__btn gcfg__btn--dxf">Download DXF live pakking</button>
+          <button id="gasket-configurator-preview-download-svg" type="button" class="gcfg__btn gcfg__btn--secondary">Download SVG live pakking</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <template id="gasket-configurator-preview-item-template">
+    <div class="gcfg__item" data-gasket-item>
+      <div class="gcfg__itemHead">
+        <strong class="gcfg__itemTitle">Pakking</strong>
+        <div class="gcfg__itemActions">
+          <button type="button" class="gcfg__miniBtn" data-preview>Voorbeeld</button>
+          <button type="button" class="gcfg__miniBtn gcfg__miniBtn--danger" data-remove>Verwijderen</button>
+        </div>
+      </div>
+
+      <div class="gcfg__row gcfg__row--2">
+        <div>
+          <label class="gcfg__label">Buitendiameter (OD) mm *</label>
+          <input class="gcfg__input" data-field="od" type="text" inputmode="decimal" placeholder="bijv. 160" value="160">
+        </div>
+        <div>
+          <label class="gcfg__label">Binnendiameter (ID) mm *</label>
+          <input class="gcfg__input" data-field="id" type="text" inputmode="decimal" placeholder="bijv. 90" value="90">
+        </div>
+      </div>
+
+      <div class="gcfg__row gcfg__row--2">
+        <div>
+          <label class="gcfg__label">Boutsteek (PCD) mm</label>
+          <input class="gcfg__input" data-field="pcd" type="text" inputmode="decimal" placeholder="bijv. 125">
+        </div>
+        <div>
+          <label class="gcfg__label">Aantal gaten</label>
+          <input class="gcfg__input" data-field="holes" type="number" min="0" step="1" placeholder="bijv. 8">
+        </div>
+      </div>
+
+      <div class="gcfg__row">
+        <div>
+          <label class="gcfg__label">Gatdiameter Ø mm</label>
+          <input class="gcfg__input" data-field="holeDia" type="text" inputmode="decimal" placeholder="bijv. 18">
+        </div>
+      </div>
+
+      <div class="gcfg__row">
+        <label class="gcfg__label">Aantal pakkingen *</label>
+        <input class="gcfg__input" data-field="qty" type="number" min="1" step="1" placeholder="bijv. 50" value="2">
+      </div>
+    </div>
+  </template>
+</div>
+
+  </main>
+</body>
+</html>
