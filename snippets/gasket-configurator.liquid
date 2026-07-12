@@ -54,7 +54,7 @@ Place this in a Custom Liquid block:
     <div class="gcfg__form">
       <div class="gcfg__intro">
         <h3 class="gcfg__title">Prijs berekenen</h3>
-        <div class="gcfg__subtitle">Kies materiaal, vorm en maten. Klik daarna op prijs berekenen.</div>
+        <div class="gcfg__subtitle">Kies materiaal, vorm en maten. Het resultaat wordt automatisch bijgewerkt.</div>
       </div>
 
       <div class="gcfg__accordion">
@@ -206,17 +206,26 @@ Place this in a Custom Liquid block:
             </div>
           </div>
 
-          <div class="gcfg__row">
-            <label class="gcfg__label" for="{{ gcfg_id }}-remainderMode">Restmateriaal</label>
-            <select id="{{ gcfg_id }}-remainderMode" class="gcfg__input">
-              <option value="charge" selected>Meerekenen in materiaalprijs</option>
-              <option value="discard">Niet meerekenen / rood als restafval tonen</option>
-            </select>
-          </div>
+        </details>
+
+        <details class="gcfg__panel" open>
+          <summary class="gcfg__sectionTitle">
+            <span>5</span>
+            <strong>Restmateriaal</strong>
+            <small>Bepaal hoe de onderste reststrook wordt behandeld.</small>
+          </summary>
+
+          <label class="gcfg__switchRow" for="{{ gcfg_id }}-remainderMode">
+            <span class="gcfg__switchCopy">
+              <strong>Onderste reststrook doorberekenen</strong>
+              <small>Uitgeschakeld wordt de strook als restafval behandeld.</small>
+            </span>
+            <input id="{{ gcfg_id }}-remainderMode" type="checkbox" checked>
+            <span class="gcfg__switch" aria-hidden="true"></span>
+          </label>
         </details>
       </div>
 
-      <button id="{{ gcfg_id }}-calc" type="button" class="gcfg__btn">Prijs berekenen</button>
       <div id="{{ gcfg_id }}-warn" class="gcfg__warn" aria-live="polite"></div>
     </div>
 
