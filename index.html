@@ -296,6 +296,10 @@
         </details>
       </div>
 
+      <div id="gasket-configurator-preview-busy" class="gcfg__busy" hidden aria-live="polite">
+        <span class="gcfg__spinner" aria-hidden="true"></span>
+        <span>Nesting berekenen...</span>
+      </div>
       <div id="gasket-configurator-preview-warn" class="gcfg__warn" aria-live="polite"></div>
     </div>
 
@@ -349,7 +353,7 @@
           </g>
         </svg>
 
-        <p class="gcfg__hint">Tip: klik bij een pakkingregel op “Voorbeeld” om die pakking rechts te tonen.</p>
+        <p class="gcfg__hint">De live preview volgt automatisch de pakking waaraan je werkt.</p>
         <div id="gasket-configurator-preview-svgWarn" class="gcfg__warn" aria-live="polite"></div>
 
         <div class="gcfg__downloadGrid">
@@ -368,10 +372,32 @@
 
         <div class="gcfg__calcCard">
           <div class="gcfg__nestHead">
-            <h4>Plaatindeling</h4>
-            <div>Werkelijk geplaatste pakkingen</div>
+            <div>
+              <h4>Plaatindeling</h4>
+              <div id="gasket-configurator-preview-nestStrategy">Slimme indeling</div>
+            </div>
+            <button id="gasket-configurator-preview-nestRetry" type="button" class="gcfg__miniBtn gcfg__nestRetry" title="Probeer een andere indeling">
+              <span aria-hidden="true">↻</span>
+              Opnieuw indelen
+            </button>
           </div>
+
+          <div class="gcfg__plateNav" aria-label="Plaatnavigatie">
+            <button id="gasket-configurator-preview-nestPrev" type="button" class="gcfg__iconBtn" aria-label="Vorige plaat" title="Vorige plaat">‹</button>
+            <strong id="gasket-configurator-preview-nestIndicator">Plaat 1 van 1</strong>
+            <button id="gasket-configurator-preview-nestNext" type="button" class="gcfg__iconBtn" aria-label="Volgende plaat" title="Volgende plaat">›</button>
+          </div>
+
           <svg id="gasket-configurator-preview-nestSvg" class="gcfg__nestSvg" role="img" aria-label="Plaatindeling"></svg>
+
+          <label class="gcfg__switchRow gcfg__plateRemainder" for="gasket-configurator-preview-plateRemainder">
+            <span class="gcfg__switchCopy">
+              <strong>Reststrook van deze plaat weggooien</strong>
+              <small id="gasket-configurator-preview-plateRemainderText">De onderste reststrook wordt per plaat ingesteld.</small>
+            </span>
+            <input id="gasket-configurator-preview-plateRemainder" type="checkbox" data-nesting-control>
+            <span class="gcfg__switch" aria-hidden="true"></span>
+          </label>
         </div>
       </div>
     </div>
@@ -382,37 +408,7 @@
       <div class="gcfg__itemHead">
         <strong class="gcfg__itemTitle">Pakking</strong>
         <div class="gcfg__itemActions">
-          <button type="button" class="gcfg__miniBtn" data-preview>Voorbeeld</button>
           <button type="button" class="gcfg__miniBtn gcfg__miniBtn--danger" data-remove>Verwijderen</button>
-        </div>
-      </div>
-
-      <div class="gcfg__row gcfg__row--2">
-        <div>
-          <label class="gcfg__label">Buitendiameter (OD) mm *</label>
-          <input class="gcfg__input" data-field="od" type="text" inputmode="decimal" placeholder="bijv. 160" value="160">
-        </div>
-        <div>
-          <label class="gcfg__label">Binnendiameter (ID) mm *</label>
-          <input class="gcfg__input" data-field="id" type="text" inputmode="decimal" placeholder="bijv. 90" value="90">
-        </div>
-      </div>
-
-      <div class="gcfg__row gcfg__row--2">
-        <div>
-          <label class="gcfg__label">Boutsteek (PCD) mm</label>
-          <input class="gcfg__input" data-field="pcd" type="text" inputmode="decimal" placeholder="bijv. 125">
-        </div>
-        <div>
-          <label class="gcfg__label">Aantal gaten</label>
-          <input class="gcfg__input" data-field="holes" type="number" min="0" step="1" placeholder="bijv. 8">
-        </div>
-      </div>
-
-      <div class="gcfg__row">
-        <div>
-          <label class="gcfg__label">Gatdiameter Ø mm</label>
-          <input class="gcfg__input" data-field="holeDia" type="text" inputmode="decimal" placeholder="bijv. 18">
         </div>
       </div>
 
