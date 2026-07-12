@@ -65,11 +65,13 @@
 
     var I18N = {
       choose_shape: 'Kies eerst een vorm. Daarna verschijnen de juiste maatvelden.',
+      choose_pattern: 'Kies hoe de pakking wordt uitgevoerd. Daarna verschijnen de maatvelden.',
       invalid: 'Vul geldige maten in. De binnenmaat moet kleiner zijn dan de buitenmaat en de pakkingbreedte moet overal passen.',
       no_items: 'Voeg minimaal één geldige pakkingregel toe.',
       no_fit: 'Eén of meer pakkingen passen niet op de ingestelde plaat.',
+      calc_error: 'De nesting kon niet worden afgerond. Verlaag het aantal of probeer opnieuw in te delen.',
       bolt_partial: 'Om het boutpatroon te tonen, vul PCD + gat Ø + aantal gaten in.',
-      bolt_no_fit: 'Boutpatroon past niet binnen de ring.',
+      bolt_no_fit: 'Een of meer gaten passen niet volledig in het pakkingmateriaal.',
       export_invalid: 'Vul eerst een geldige live pakking in. De binnenmaat moet kleiner zijn dan de buitenmaat.',
       export_bolt_partial: 'Voor export van boutgaten: vul PCD + gat Ø + aantal gaten volledig in.',
       export_bolt_no_fit: 'Boutpatroon past niet binnen de ring. Export is gestopt.'
@@ -109,8 +111,17 @@
       calcBox: bySuffix('-calcBox'),
       priceResult: bySuffix('-priceResult'),
       nestSvg: bySuffix('-nestSvg'),
+      busy: bySuffix('-busy'),
       warnBox: bySuffix('-warn'),
       svgWarn: bySuffix('-svgWarn'),
+
+      nestRetry: bySuffix('-nestRetry'),
+      nestPrev: bySuffix('-nestPrev'),
+      nestNext: bySuffix('-nestNext'),
+      nestIndicator: bySuffix('-nestIndicator'),
+      nestStrategy: bySuffix('-nestStrategy'),
+      plateRemainder: bySuffix('-plateRemainder'),
+      plateRemainderText: bySuffix('-plateRemainderText'),
 
       dxfBtn: bySuffix('-download-dxf'),
       svgBtn: bySuffix('-download-svg'),
@@ -166,6 +177,12 @@
     var activeItem = null;
     var renderFrame = null;
     var autoCalcTimer = null;
+    var calculationSequence = 0;
+    var nestingAttempt = 0;
+    var currentPlateIndex = 0;
+    var plateRemainderOverrides = {};
+    var lastCalculationData = null;
+    var nestTouchStartX = null;
 
     function updateStaticCopy() {
       var replacements = {
@@ -361,19 +378,20 @@
     function itemLabel(it) {
       if (!it) return 'Pakking';
       if (it.shape === 'rect') {
-        return 'Rechthoek ' + fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1);
+        return 'Rechthoek ' + fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1) + (it.hasCenterHole ? '' : ' massief');
       }
       if (it.shape === 'manhole') {
         return 'Mangat Ø ' + fmt(it.manholeDia, 1) + ' + ' +
           fmt(it.straightLength, 1) + ' mm recht • pakkingbreedte ' +
-          fmt(it.ringWidth, 1) + ' mm';
+          (it.hasCenterHole ? fmt(it.ringWidth, 1) + ' mm' : 'massief');
       }
 
-      return 'Rond OD ' + fmt(it.od, 1) + ' / ID ' + fmt(it.id, 1);
+      return 'Rond OD ' + fmt(it.od, 1) + (it.hasCenterHole ? ' / ID ' + fmt(it.id, 1) : ' massief');
     }
 
     function innerLabel(it) {
       if (!it) return '';
+      if (!it.hasCenterHole) return 'geen middengat';
       if (it.innerShape === 'manhole') {
         return 'binnen mangat ' + fmt(it.innerW, 1) + ' x ' + fmt(it.innerH, 1);
       }
@@ -391,6 +409,8 @@
     }
 
     function innerPathForItem(it, cx, cy, scale) {
+      if (!it.hasCenterHole) return '';
+
       if (it.innerShape === 'rect' || it.innerShape === 'manhole') {
         return roundedRectPath(cx, cy, it.innerW, it.innerH, it.innerRadius, scale);
       }
@@ -556,54 +576,95 @@
       return (
         '<div class="gcfg__shapeBlock" data-shape-controls>' +
           '<input type="hidden" data-field="shape" value="">' +
-          '<div class="gcfg__shapePicker" role="radiogroup" aria-label="Vorm">' +
-            shapeTileHtml('circle', 'Rond', '<circle cx="32" cy="32" r="22"></circle><circle cx="32" cy="32" r="10"></circle>') +
-            shapeTileHtml('rect', 'Vierkant', '<rect x="11" y="13" width="42" height="38" rx="7"></rect><rect x="22" y="23" width="20" height="18" rx="4"></rect>') +
-            shapeTileHtml('manhole', 'Mangat', '<rect x="8" y="18" width="48" height="28" rx="14"></rect><rect x="21" y="24" width="22" height="16" rx="8"></rect>') +
-          '</div>' +
-          '<div class="gcfg__shapePrompt" data-shape-prompt>Kies een vorm om de maatvelden te openen.</div>' +
+          '<input type="hidden" data-field="holePattern" value="">' +
 
-          '<div class="gcfg__row gcfg__row--2" data-show-for="rect">' +
-            fieldBlock('Totale buitenlengte mm *', 'outerW', 'text', 'inputmode="decimal" placeholder="bijv. 400"') +
-            fieldBlock('Totale buitenbreedte mm *', 'outerH', 'text', 'inputmode="decimal" placeholder="bijv. 200"') +
-          '</div>' +
-
-          '<div class="gcfg__row" data-show-for="rect">' +
-            fieldBlock('Buitenradius mm', 'outerRadius', 'text', 'inputmode="decimal" placeholder="bijv. 8, of leeg voor scherp"') +
+          '<div data-shape-step>' +
+            '<div class="gcfg__stageLabel"><span>1</span><strong>Kies de vorm</strong></div>' +
+            '<div class="gcfg__shapePicker" role="radiogroup" aria-label="Vorm">' +
+              shapeTileHtml('circle', 'Rond', '<circle cx="32" cy="32" r="21"></circle>') +
+              shapeTileHtml('rect', 'Vierkant', '<rect x="11" y="14" width="42" height="36" rx="5"></rect>') +
+              shapeTileHtml('manhole', 'Mangat', '<path d="M22 15h20a17 17 0 0 1 0 34H22a17 17 0 0 1 0-34Z"></path>') +
+            '</div>' +
           '</div>' +
 
-          '<div class="gcfg__row" data-show-for="rect">' +
-            '<label class="gcfg__label">Binnenvorm *</label>' +
-            '<select class="gcfg__input" data-field="innerShape">' +
-              '<option value="circle">Rond gat</option>' +
-              '<option value="rect">Vierkant / rechthoekig gat</option>' +
-            '</select>' +
-          '</div>' +
+          '<div data-config-step hidden>' +
+            '<div class="gcfg__selectedShape">' +
+              '<button type="button" class="gcfg__iconBtn" data-change-shape aria-label="Andere vorm kiezen" title="Andere vorm kiezen">←</button>' +
+              '<span><small>Gekozen vorm</small><strong data-selected-shape-label></strong></span>' +
+            '</div>' +
 
-          '<div class="gcfg__row" data-show-for="rect" data-inner-show-for="circle">' +
-            fieldBlock('Binnen Ø mm *', 'innerDia', 'text', 'inputmode="decimal" placeholder="bijv. 90"') +
-          '</div>' +
+            '<div class="gcfg__stageLabel"><span>2</span><strong>Kies de uitvoering</strong></div>' +
+            '<div class="gcfg__patternPicker" role="radiogroup" aria-label="Gatenpatroon">' +
+              patternTileHtml('solid', 'Alleen buitenvorm', 'circle rect manhole', '<circle cx="32" cy="32" r="20" class="gcfg__iconFill"></circle>') +
+              patternTileHtml('center', 'Middengat', 'circle rect manhole', '<circle cx="32" cy="32" r="20"></circle><circle cx="32" cy="32" r="9"></circle>') +
+              patternTileHtml('bolt-circle', 'Midden + boutcirkel', 'circle', '<circle cx="32" cy="32" r="21"></circle><circle cx="32" cy="32" r="8"></circle><circle cx="32" cy="13" r="2.5" class="gcfg__iconDot"></circle><circle cx="51" cy="32" r="2.5" class="gcfg__iconDot"></circle><circle cx="32" cy="51" r="2.5" class="gcfg__iconDot"></circle><circle cx="13" cy="32" r="2.5" class="gcfg__iconDot"></circle>') +
+              patternTileHtml('corners', 'Midden + hoeken', 'rect manhole', '<rect x="10" y="13" width="44" height="38" rx="7"></rect><rect x="22" y="23" width="20" height="18" rx="4"></rect><circle cx="17" cy="20" r="2.5" class="gcfg__iconDot"></circle><circle cx="47" cy="20" r="2.5" class="gcfg__iconDot"></circle><circle cx="47" cy="44" r="2.5" class="gcfg__iconDot"></circle><circle cx="17" cy="44" r="2.5" class="gcfg__iconDot"></circle>') +
+              patternTileHtml('perimeter', 'Midden + rondom', 'rect manhole', '<rect x="8" y="15" width="48" height="34" rx="15"></rect><rect x="21" y="23" width="22" height="18" rx="8"></rect><circle cx="16" cy="19" r="2" class="gcfg__iconDot"></circle><circle cx="32" cy="17" r="2" class="gcfg__iconDot"></circle><circle cx="48" cy="19" r="2" class="gcfg__iconDot"></circle><circle cx="52" cy="32" r="2" class="gcfg__iconDot"></circle><circle cx="48" cy="45" r="2" class="gcfg__iconDot"></circle><circle cx="32" cy="47" r="2" class="gcfg__iconDot"></circle><circle cx="16" cy="45" r="2" class="gcfg__iconDot"></circle><circle cx="12" cy="32" r="2" class="gcfg__iconDot"></circle>') +
+            '</div>' +
 
-          '<div class="gcfg__row gcfg__row--2" data-show-for="rect" data-inner-show-for="rect">' +
-            fieldBlock('Binnenlengte / breedte mm *', 'innerW', 'text', 'inputmode="decimal" placeholder="bijv. 140"') +
-            fieldBlock('Binnenhoogte mm *', 'innerH', 'text', 'inputmode="decimal" placeholder="bijv. 70"') +
-          '</div>' +
+            '<div class="gcfg__shapePrompt" data-pattern-prompt>Kies een uitvoering om de maatvelden te openen.</div>' +
 
-          '<div class="gcfg__row" data-show-for="rect" data-inner-show-for="rect">' +
-            fieldBlock('Binnenradius mm', 'innerRadius', 'text', 'inputmode="decimal" placeholder="bijv. 8"') +
-          '</div>' +
+            '<div class="gcfg__measurements" data-requires-pattern>' +
+              '<div class="gcfg__stageLabel"><span>3</span><strong>Vul de maten in</strong></div>' +
 
-          '<div class="gcfg__row gcfg__row--2" data-show-for="manhole">' +
-            fieldBlock('Buitendiameter ronde delen mm *', 'manholeDia', 'text', 'inputmode="decimal" placeholder="bijv. 200"') +
-            fieldBlock('Lengte recht tussenstuk mm *', 'straightLength', 'text', 'inputmode="decimal" placeholder="bijv. 200"') +
-          '</div>' +
+              '<div class="gcfg__row" data-show-for="circle">' +
+                fieldBlock('Buitendiameter (OD) mm *', 'od', 'text', 'inputmode="decimal" value="160"') +
+              '</div>' +
+              '<div class="gcfg__row" data-show-for="circle" data-pattern-show-for="center bolt-circle">' +
+                fieldBlock('Binnendiameter (ID) mm *', 'id', 'text', 'inputmode="decimal" value="90"') +
+              '</div>' +
+              '<div class="gcfg__row gcfg__row--2" data-show-for="circle" data-pattern-show-for="bolt-circle">' +
+                fieldBlock('Boutsteek (PCD) mm', 'pcd', 'text', 'inputmode="decimal" placeholder="automatisch in het midden"') +
+                fieldBlock('Aantal gaten', 'holes', 'number', 'min="1" step="1" value="8"') +
+              '</div>' +
+              '<div class="gcfg__row gcfg__row--2" data-show-for="circle" data-pattern-show-for="bolt-circle">' +
+                fieldBlock('Gatdiameter Ø mm', 'holeDia', 'text', 'inputmode="decimal" value="12"') +
+                fieldBlock('Positie eerste gat °', 'startAngle', 'number', 'step="1" value="-90"') +
+              '</div>' +
 
-          '<div class="gcfg__row" data-show-for="manhole">' +
-            fieldBlock('Pakkingbreedte rondom mm *', 'ringWidth', 'text', 'inputmode="decimal" placeholder="bijv. 25"') +
-          '</div>' +
+              '<div class="gcfg__row gcfg__row--2" data-show-for="rect">' +
+                fieldBlock('Totale buitenlengte mm *', 'outerW', 'text', 'inputmode="decimal" value="400"') +
+                fieldBlock('Totale buitenbreedte mm *', 'outerH', 'text', 'inputmode="decimal" value="200"') +
+              '</div>' +
+              '<div class="gcfg__row" data-show-for="rect">' +
+                fieldBlock('Buitenradius mm', 'outerRadius', 'text', 'inputmode="decimal" value="8"') +
+              '</div>' +
+              '<div class="gcfg__row" data-show-for="rect" data-pattern-show-for="center corners perimeter">' +
+                '<label class="gcfg__label">Vorm van het middengat *</label>' +
+                '<select class="gcfg__input" data-field="innerShape"><option value="rect">Vierkant / rechthoekig</option><option value="circle">Rond</option></select>' +
+              '</div>' +
+              '<div class="gcfg__row" data-show-for="rect" data-pattern-show-for="center corners perimeter" data-inner-show-for="circle">' +
+                fieldBlock('Binnen Ø mm *', 'innerDia', 'text', 'inputmode="decimal" value="90"') +
+              '</div>' +
+              '<div class="gcfg__row gcfg__row--2" data-show-for="rect" data-pattern-show-for="center corners perimeter" data-inner-show-for="rect">' +
+                fieldBlock('Binnenlengte mm *', 'innerW', 'text', 'inputmode="decimal" value="240"') +
+                fieldBlock('Binnenhoogte mm *', 'innerH', 'text', 'inputmode="decimal" value="90"') +
+              '</div>' +
+              '<div class="gcfg__row" data-show-for="rect" data-pattern-show-for="center corners perimeter" data-inner-show-for="rect">' +
+                fieldBlock('Binnenradius mm', 'innerRadius', 'text', 'inputmode="decimal" value="8"') +
+              '</div>' +
 
-          '<div class="gcfg__derived" data-show-for="manhole" data-manhole-derived>' +
-            'Vul diameter, recht tussenstuk en pakkingbreedte in; de totale maten worden automatisch berekend.' +
+              '<div class="gcfg__row gcfg__row--2" data-show-for="manhole">' +
+                fieldBlock('Diameter ronde delen mm *', 'manholeDia', 'text', 'inputmode="decimal" value="200"') +
+                fieldBlock('Lengte recht tussenstuk mm *', 'straightLength', 'text', 'inputmode="decimal" value="200"') +
+              '</div>' +
+              '<div class="gcfg__row" data-show-for="manhole" data-pattern-show-for="center corners perimeter">' +
+                fieldBlock('Pakkingbreedte rondom mm *', 'ringWidth', 'text', 'inputmode="decimal" value="25"') +
+              '</div>' +
+              '<div class="gcfg__derived" data-show-for="manhole" data-manhole-derived></div>' +
+
+              '<div class="gcfg__row gcfg__row--2" data-pattern-show-for="corners perimeter">' +
+                fieldBlock('Afstand tot buitenrand mm', 'edgeOffset', 'text', 'inputmode="decimal" placeholder="automatisch in het midden"') +
+                fieldBlock('Gatdiameter Ø mm', 'holeDia', 'text', 'inputmode="decimal" value="12"') +
+              '</div>' +
+              '<div class="gcfg__row gcfg__row--2" data-pattern-show-for="perimeter">' +
+                fieldBlock('Aantal gaten', 'holes', 'number', 'min="1" step="1" value="10"') +
+                fieldBlock('Afstand tussen gaten mm', 'holeSpacing', 'text', 'inputmode="decimal" placeholder="automatisch gelijk verdeeld"') +
+              '</div>' +
+              '<div class="gcfg__row" data-pattern-show-for="perimeter">' +
+                fieldBlock('Positie eerste gat vanaf boven mm', 'startOffset', 'text', 'inputmode="decimal" value="0"') +
+              '</div>' +
+            '</div>' +
           '</div>' +
         '</div>'
       );
@@ -618,6 +679,15 @@
       );
     }
 
+    function patternTileHtml(value, label, shapes, icon) {
+      return (
+        '<button type="button" class="gcfg__patternTile" data-pattern-choice="' + value + '" data-pattern-for="' + shapes + '" role="radio" aria-checked="false">' +
+          '<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">' + icon + '</svg>' +
+          '<span>' + label + '</span>' +
+        '</button>'
+      );
+    }
+
     function closestFieldWrap(input) {
       return input && input.parentElement ? input.parentElement : null;
     }
@@ -625,20 +695,13 @@
     function prepareItemShapeUI(item) {
       if (!item || item.__gcfgShapeReady) return;
 
-      var f = itemFields(item);
-      var circleRow = f.od && f.od.closest ? f.od.closest('.gcfg__row') : null;
-      var pcdRow = f.pcd && f.pcd.closest ? f.pcd.closest('.gcfg__row') : null;
-      var holeDiaRow = f.holeDia && f.holeDia.closest ? f.holeDia.closest('.gcfg__row') : null;
-      var qtyRow = f.qty && f.qty.closest ? f.qty.closest('.gcfg__row') : null;
+      var qty = item.querySelector('[data-field="qty"]');
+      var qtyRow = qty && qty.closest ? qty.closest('.gcfg__row') : null;
 
-      if (circleRow) {
-        circleRow.setAttribute('data-show-for', 'circle');
-        circleRow.insertAdjacentHTML('beforebegin', shapeControlsHtml());
+      if (qtyRow) {
+        qtyRow.insertAdjacentHTML('beforebegin', shapeControlsHtml());
+        qtyRow.setAttribute('data-requires-pattern', 'true');
       }
-
-      if (pcdRow) pcdRow.setAttribute('data-show-for', 'circle');
-      if (holeDiaRow) holeDiaRow.setAttribute('data-show-for', 'circle');
-      if (qtyRow) qtyRow.setAttribute('data-requires-shape', 'true');
 
       item.__gcfgShapeReady = true;
       syncShapeUI(item);
@@ -647,14 +710,34 @@
     function syncShapeUI(item) {
       var f = itemFields(item);
       var shape = f.shape && f.shape.value ? f.shape.value : '';
+      var pattern = f.holePattern && f.holePattern.value ? f.holePattern.value : '';
       var innerShape = f.innerShape && f.innerShape.value ? f.innerShape.value : 'circle';
 
       item.setAttribute('data-shape', shape);
+      item.setAttribute('data-hole-pattern', pattern);
       item.setAttribute('data-inner-shape', innerShape);
       item.classList.toggle('has-shape', !!shape);
+      item.classList.toggle('has-pattern', !!pattern);
+
+      var shapeStep = item.querySelector('[data-shape-step]');
+      var configStep = item.querySelector('[data-config-step]');
+      if (shapeStep) shapeStep.hidden = !!shape;
+      if (configStep) configStep.hidden = !shape;
+
+      Array.prototype.slice.call(item.querySelectorAll('[data-selected-shape-label]')).forEach(function (el) {
+        el.textContent = shapeLabel(shape);
+      });
 
       Array.prototype.slice.call(item.querySelectorAll('[data-shape-choice]')).forEach(function (btn) {
         var active = btn.getAttribute('data-shape-choice') === shape;
+        btn.classList.toggle('is-selected', active);
+        btn.setAttribute('aria-checked', active ? 'true' : 'false');
+      });
+
+      Array.prototype.slice.call(item.querySelectorAll('[data-pattern-choice]')).forEach(function (btn) {
+        var allowed = String(btn.getAttribute('data-pattern-for') || '').split(/\s+/).indexOf(shape) !== -1;
+        var active = allowed && btn.getAttribute('data-pattern-choice') === pattern;
+        btn.hidden = !allowed;
         btn.classList.toggle('is-selected', active);
         btn.setAttribute('aria-checked', active ? 'true' : 'false');
       });
@@ -666,20 +749,28 @@
 
       Array.prototype.slice.call(item.querySelectorAll('[data-inner-show-for]')).forEach(function (el) {
         var allowed = String(el.getAttribute('data-inner-show-for') || '').split(/\s+/);
-        el.hidden = allowed.indexOf(innerShape) === -1 || shape !== 'rect';
+        var patternAllowed = String(el.getAttribute('data-pattern-show-for') || '').split(/\s+/);
+        el.hidden = allowed.indexOf(innerShape) === -1 || shape !== 'rect' || patternAllowed.indexOf(pattern) === -1;
       });
 
-      Array.prototype.slice.call(item.querySelectorAll('[data-requires-shape]')).forEach(function (el) {
-        el.hidden = !shape;
+      Array.prototype.slice.call(item.querySelectorAll('[data-pattern-show-for]')).forEach(function (el) {
+        if (el.hasAttribute('data-inner-show-for')) return;
+        var allowed = String(el.getAttribute('data-pattern-show-for') || '').split(/\s+/);
+        var shapeAllowed = !el.hasAttribute('data-show-for') || String(el.getAttribute('data-show-for') || '').split(/\s+/).indexOf(shape) !== -1;
+        el.hidden = !shapeAllowed || allowed.indexOf(pattern) === -1;
       });
 
-      Array.prototype.slice.call(item.querySelectorAll('[data-shape-prompt]')).forEach(function (el) {
-        el.hidden = !!shape;
+      Array.prototype.slice.call(item.querySelectorAll('[data-requires-pattern]')).forEach(function (el) {
+        el.hidden = !shape || !pattern;
+      });
+
+      Array.prototype.slice.call(item.querySelectorAll('[data-pattern-prompt]')).forEach(function (el) {
+        el.hidden = !!pattern;
       });
 
       var manholeDerived = item.querySelector('[data-manhole-derived]');
 
-      if (manholeDerived && shape === 'manhole') {
+      if (manholeDerived && shape === 'manhole' && pattern) {
         var manholeDia = val(f.manholeDia);
         var straightLength = val(f.straightLength);
         var ringWidth = val(f.ringWidth);
@@ -688,7 +779,10 @@
         var innerH = manholeDia - ringWidth * 2;
         var innerW = innerH + straightLength;
 
-        if (manholeDia > 0 && straightLength > 0 && ringWidth > 0 && innerH > 0) {
+        if (pattern === 'solid' && manholeDia > 0 && straightLength > 0) {
+          manholeDerived.textContent = 'Totale buitenmaat: ' + fmt(outerW, 1) + ' x ' + fmt(outerH, 1) + ' mm.';
+          manholeDerived.classList.remove('is-invalid');
+        } else if (manholeDia > 0 && straightLength > 0 && ringWidth > 0 && innerH > 0) {
           manholeDerived.textContent =
             'Totale buitenmaat: ' + fmt(outerW, 1) + ' x ' + fmt(outerH, 1) +
             ' mm • binnenmaat: ' + fmt(innerW, 1) + ' x ' + fmt(innerH, 1) + ' mm.';
@@ -702,34 +796,179 @@
     }
 
     function itemFields(item) {
+      function field(name) {
+        var fields = Array.prototype.slice.call(item.querySelectorAll('[data-field="' + name + '"]'));
+        if (!fields.length) return null;
+
+        for (var i = 0; i < fields.length; i++) {
+          if (!fields[i].closest('[hidden]')) return fields[i];
+        }
+
+        return fields[0];
+      }
+
       return {
-        shape: item.querySelector('[data-field="shape"]'),
-        od: item.querySelector('[data-field="od"]'),
-        id: item.querySelector('[data-field="id"]'),
-        outerW: item.querySelector('[data-field="outerW"]'),
-        outerH: item.querySelector('[data-field="outerH"]'),
-        outerRadius: item.querySelector('[data-field="outerRadius"]'),
-        innerShape: item.querySelector('[data-field="innerShape"]'),
-        innerDia: item.querySelector('[data-field="innerDia"]'),
-        innerW: item.querySelector('[data-field="innerW"]'),
-        innerH: item.querySelector('[data-field="innerH"]'),
-        innerRadius: item.querySelector('[data-field="innerRadius"]'),
-        manholeDia: item.querySelector('[data-field="manholeDia"]'),
-        straightLength: item.querySelector('[data-field="straightLength"]'),
-        ringWidth: item.querySelector('[data-field="ringWidth"]'),
-        pcd: item.querySelector('[data-field="pcd"]'),
-        holes: item.querySelector('[data-field="holes"]'),
-        holeDia: item.querySelector('[data-field="holeDia"]'),
-        h: item.querySelector('[data-field="h"]'),
-        qty: item.querySelector('[data-field="qty"]')
+        shape: field('shape'),
+        holePattern: field('holePattern'),
+        od: field('od'),
+        id: field('id'),
+        outerW: field('outerW'),
+        outerH: field('outerH'),
+        outerRadius: field('outerRadius'),
+        innerShape: field('innerShape'),
+        innerDia: field('innerDia'),
+        innerW: field('innerW'),
+        innerH: field('innerH'),
+        innerRadius: field('innerRadius'),
+        manholeDia: field('manholeDia'),
+        straightLength: field('straightLength'),
+        ringWidth: field('ringWidth'),
+        pcd: field('pcd'),
+        holes: field('holes'),
+        holeDia: field('holeDia'),
+        startAngle: field('startAngle'),
+        edgeOffset: field('edgeOffset'),
+        holeSpacing: field('holeSpacing'),
+        startOffset: field('startOffset'),
+        h: field('h'),
+        qty: field('qty')
       };
+    }
+
+    function patternHasCenterHole(pattern) {
+      return pattern === 'center' || pattern === 'bolt-circle' || pattern === 'corners' || pattern === 'perimeter';
+    }
+
+    function patternHasExtraHoles(pattern) {
+      return pattern === 'bolt-circle' || pattern === 'corners' || pattern === 'perimeter';
+    }
+
+    function pointInsideRoundedRect(x, y, width, height, radius) {
+      if (!(width > 0) || !(height > 0)) return false;
+
+      radius = clampRadius(width, height, radius);
+      var qx = Math.abs(x) - width / 2 + radius;
+      var qy = Math.abs(y) - height / 2 + radius;
+      var outsideX = Math.max(qx, 0);
+      var outsideY = Math.max(qy, 0);
+      var signedDistance = Math.sqrt(outsideX * outsideX + outsideY * outsideY) + Math.min(Math.max(qx, qy), 0) - radius;
+
+      return signedDistance <= 0.001;
+    }
+
+    function pointAlongClosedPath(points, distance) {
+      if (!points || points.length < 2) return { x: 0, y: 0 };
+
+      var segments = [];
+      var total = 0;
+
+      for (var i = 0; i < points.length; i++) {
+        var a = points[i];
+        var b = points[(i + 1) % points.length];
+        var length = Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2));
+        if (!(length > 0)) continue;
+        segments.push({ a: a, b: b, start: total, length: length });
+        total += length;
+      }
+
+      if (!(total > 0)) return { x: 0, y: 0 };
+      distance = ((distance % total) + total) % total;
+
+      for (var s = 0; s < segments.length; s++) {
+        var segment = segments[s];
+        if (distance > segment.start + segment.length && s < segments.length - 1) continue;
+        var t = Math.max(0, Math.min(1, (distance - segment.start) / segment.length));
+        return {
+          x: segment.a.x + (segment.b.x - segment.a.x) * t,
+          y: segment.a.y + (segment.b.y - segment.a.y) * t
+        };
+      }
+
+      return points[0];
+    }
+
+    function defaultHoleEdgeOffset(it) {
+      if (!it.hasCenterHole) return Math.max(it.holeDia / 2 + 2, Math.min(it.outerW, it.outerH) * 0.12);
+      if (it.shape === 'circle') return Math.max(it.holeDia / 2 + 2, (it.od - it.id) / 4);
+      if (it.shape === 'manhole') return Math.max(it.holeDia / 2 + 2, it.ringWidth / 2);
+
+      var horizontalBand = (it.outerW - it.innerW) / 2;
+      var verticalBand = (it.outerH - it.innerH) / 2;
+      return Math.max(it.holeDia / 2 + 2, Math.min(horizontalBand, verticalBand) / 2);
+    }
+
+    function buildHoleCenters(it) {
+      var centers = [];
+      if (!patternHasExtraHoles(it.holePattern) || !(it.holeDia > 0)) return centers;
+
+      if (it.holePattern === 'bolt-circle') {
+        var count = Math.max(1, it.requestedHoleCount);
+        var rp = it.pcd / 2;
+        var start = it.startAngle * Math.PI / 180;
+
+        for (var c = 0; c < count; c++) {
+          var angle = start + Math.PI * 2 * c / count;
+          centers.push({ x: rp * Math.cos(angle), y: rp * Math.sin(angle), r: it.holeDia / 2 });
+        }
+
+        return centers;
+      }
+
+      var offset = it.edgeOffset;
+      var pathW = Math.max(0, it.outerW - offset * 2);
+      var pathH = Math.max(0, it.outerH - offset * 2);
+      var pathRadius = clampRadius(pathW, pathH, Math.max(0, it.outerRadius - offset));
+
+      if (it.holePattern === 'corners') {
+        var hw = pathW / 2;
+        var hh = pathH / 2;
+        var diagonal = pathRadius > 0 ? pathRadius * (1 - Math.SQRT1_2) : 0;
+        var x = Math.max(0, hw - diagonal);
+        var y = Math.max(0, hh - diagonal);
+
+        return [
+          { x: -x, y: -y, r: it.holeDia / 2 },
+          { x: x, y: -y, r: it.holeDia / 2 },
+          { x: x, y: y, r: it.holeDia / 2 },
+          { x: -x, y: y, r: it.holeDia / 2 }
+        ];
+      }
+
+      var points = roundedRectPoints(pathW, pathH, pathRadius, 12);
+      var requested = Math.max(1, it.requestedHoleCount);
+      var spacing = it.holeSpacing > 0 ? it.holeSpacing : roundedRectPerimeter(pathW, pathH, pathRadius) / requested;
+
+      for (var h = 0; h < requested; h++) {
+        var point = pointAlongClosedPath(points, it.startOffset + h * spacing);
+        centers.push({ x: point.x, y: point.y, r: it.holeDia / 2 });
+      }
+
+      return centers;
+    }
+
+    function holeFitsMaterial(it, hole) {
+      var rh = hole.r;
+      var distance = Math.sqrt(hole.x * hole.x + hole.y * hole.y);
+      var fitsOuter = it.shape === 'circle'
+        ? distance + rh < it.od / 2 - 0.001
+        : pointInsideRoundedRect(hole.x, hole.y, it.outerW - rh * 2, it.outerH - rh * 2, Math.max(0, it.outerRadius - rh));
+
+      if (!fitsOuter) return false;
+      if (!it.hasCenterHole) return true;
+
+      if (it.innerShape === 'circle') return distance - rh > it.innerDia / 2 + 0.001;
+
+      return !pointInsideRoundedRect(hole.x, hole.y, it.innerW + rh * 2, it.innerH + rh * 2, it.innerRadius + rh);
     }
 
     function readItem(item, index) {
       var f = itemFields(item);
       var shape = f.shape && f.shape.value ? f.shape.value : '';
+      var holePattern = f.holePattern && f.holePattern.value ? f.holePattern.value : '';
 
-      if (!shape) return null;
+      if (!shape || !holePattern) return null;
+
+      var hasCenterHole = patternHasCenterHole(holePattern);
 
       var innerShape = shape === 'circle'
         ? 'circle'
@@ -753,8 +992,12 @@
       var innerRadius = val(f.innerRadius);
       var ringWidth = val(f.ringWidth);
       var pcd = val(f.pcd);
-      var holes = Math.max(0, Math.round(val(f.holes)));
-      var holeDia = val(f.holeDia);
+      var requestedHoleCount = Math.max(0, Math.round(val(f.holes)));
+      var holeDia = patternHasExtraHoles(holePattern) ? val(f.holeDia) : 0;
+      var startAngle = extractNumber(f.startAngle && f.startAngle.value);
+      var edgeOffset = extractNumber(f.edgeOffset && f.edgeOffset.value);
+      var holeSpacing = val(f.holeSpacing);
+      var startOffset = val(f.startOffset);
       var h = val(f.h);
       var qty = Math.max(0, Math.round(val(f.qty)));
 
@@ -762,9 +1005,16 @@
 
       if (shape === 'circle') {
         outerRadius = od / 2;
-        innerRadius = id / 2;
+        innerRadius = hasCenterHole ? id / 2 : 0;
 
-        if (!(od > 0) || !(id > 0) || id >= od) return null;
+        if (!(od > 0)) return null;
+        if (hasCenterHole && (!(id > 0) || id >= od)) return null;
+        if (!hasCenterHole) {
+          id = 0;
+          innerDia = 0;
+          innerW = 0;
+          innerH = 0;
+        }
       } else {
         if (!(outerW > 0) || !(outerH > 0)) return null;
 
@@ -773,11 +1023,24 @@
           : clampRadius(outerW, outerH, outerRadius);
 
         if (shape === 'manhole') {
-          if (!(manholeDia > 0) || !(straightLength > 0) || !(ringWidth > 0) || ringWidth * 2 >= manholeDia) return null;
-          innerH = manholeDia - ringWidth * 2;
-          innerW = innerH + straightLength;
-          innerDia = Math.max(innerW, innerH);
-          innerRadius = innerH / 2;
+          if (!(manholeDia > 0) || !(straightLength > 0)) return null;
+          if (hasCenterHole) {
+            if (!(ringWidth > 0) || ringWidth * 2 >= manholeDia) return null;
+            innerH = manholeDia - ringWidth * 2;
+            innerW = innerH + straightLength;
+            innerDia = Math.max(innerW, innerH);
+            innerRadius = innerH / 2;
+          } else {
+            innerW = 0;
+            innerH = 0;
+            innerDia = 0;
+            innerRadius = 0;
+          }
+        } else if (!hasCenterHole) {
+          innerW = 0;
+          innerH = 0;
+          innerDia = 0;
+          innerRadius = 0;
         } else if (innerShape === 'circle') {
           if (!(innerDia > 0) || innerDia >= Math.min(outerW, outerH)) return null;
           innerW = innerDia;
@@ -790,14 +1053,13 @@
 
         od = Math.max(outerW, outerH);
         id = innerShape === 'circle' ? innerDia : Math.max(innerW, innerH);
-        holes = 0;
-        pcd = 0;
-        holeDia = 0;
       }
 
-      return {
+      var result = {
         index: index + 1,
         shape: shape,
+        holePattern: holePattern,
+        hasCenterHole: hasCenterHole,
         innerShape: innerShape,
         od: od,
         id: id,
@@ -812,11 +1074,34 @@
         straightLength: straightLength,
         ringWidth: ringWidth,
         pcd: pcd,
-        holes: holes,
+        holes: 0,
+        requestedHoleCount: holePattern === 'corners' ? 4 : requestedHoleCount,
         holeDia: holeDia,
+        startAngle: startAngle == null ? -90 : startAngle,
+        edgeOffset: edgeOffset == null ? 0 : edgeOffset,
+        holeSpacing: holeSpacing,
+        startOffset: startOffset,
         h: h,
         qty: qty
       };
+
+      if (holePattern === 'bolt-circle' && !(result.pcd > 0)) {
+        result.pcd = (result.od + result.id) / 2;
+      }
+
+      if ((holePattern === 'corners' || holePattern === 'perimeter') && !(result.edgeOffset > 0)) {
+        result.edgeOffset = defaultHoleEdgeOffset(result);
+      }
+
+      result.holeCenters = buildHoleCenters(result);
+      result.holes = result.holeCenters.length;
+
+      if (patternHasExtraHoles(holePattern)) {
+        if (!(holeDia > 0) || !(result.requestedHoleCount > 0) || !result.holeCenters.length) return null;
+        if (result.holeCenters.some(function (hole) { return !holeFitsMaterial(result, hole); })) return null;
+      }
+
+      return result;
     }
 
     function readItems() {
@@ -830,29 +1115,16 @@
       return out;
     }
 
-    function boltPatternMessage(it, messages) {
-      if (it.shape && it.shape !== 'circle') return '';
-
-      var filled = [it.pcd, it.holes, it.holeDia].filter(function (x) {
-        return x && x > 0;
-      }).length;
-
-      if (filled > 0 && filled < 3) return messages.partial;
-
-      if (it.pcd > 0 && it.holes > 0 && it.holeDia > 0) {
-        var ro = it.od / 2;
-        var ri = it.id / 2;
-        var rp = it.pcd / 2;
-        var rh = it.holeDia / 2;
-
-        if (!(rp - rh > ri) || !(rp + rh < ro)) return messages.noFit;
-      }
-
-      return '';
-    }
-
     function validateBoltPattern(it, target, messages) {
-      var message = boltPatternMessage(it, messages);
+      var message = '';
+
+      if (patternHasExtraHoles(it.holePattern)) {
+        if (!(it.holeDia > 0) || !it.holeCenters || !it.holeCenters.length) {
+          message = messages.partial;
+        } else if (it.holeCenters.some(function (hole) { return !holeFitsMaterial(it, hole); })) {
+          message = messages.noFit;
+        }
+      }
 
       if (message) {
         warn(target, message);
@@ -915,8 +1187,9 @@
       var f = itemFields(item);
 
       if (defaults.shape != null && f.shape) f.shape.value = defaults.shape;
-      if (defaults.od != null) f.od.value = defaults.od;
-      if (defaults.id != null) f.id.value = defaults.id;
+      if (defaults.holePattern != null && f.holePattern) f.holePattern.value = defaults.holePattern;
+      if (defaults.od != null && f.od) f.od.value = defaults.od;
+      if (defaults.id != null && f.id) f.id.value = defaults.id;
       if (defaults.outerW != null && f.outerW) f.outerW.value = defaults.outerW;
       if (defaults.outerH != null && f.outerH) f.outerH.value = defaults.outerH;
       if (defaults.outerRadius != null && f.outerRadius) f.outerRadius.value = defaults.outerRadius;
@@ -928,9 +1201,13 @@
       if (defaults.manholeDia != null && f.manholeDia) f.manholeDia.value = defaults.manholeDia;
       if (defaults.straightLength != null && f.straightLength) f.straightLength.value = defaults.straightLength;
       if (defaults.ringWidth != null && f.ringWidth) f.ringWidth.value = defaults.ringWidth;
-      if (defaults.pcd != null) f.pcd.value = defaults.pcd;
-      if (defaults.holes != null) f.holes.value = defaults.holes;
-      if (defaults.holeDia != null) f.holeDia.value = defaults.holeDia;
+      if (defaults.pcd != null && f.pcd) f.pcd.value = defaults.pcd;
+      if (defaults.holes != null && f.holes) f.holes.value = defaults.holes;
+      if (defaults.holeDia != null && f.holeDia) f.holeDia.value = defaults.holeDia;
+      if (defaults.startAngle != null && f.startAngle) f.startAngle.value = defaults.startAngle;
+      if (defaults.edgeOffset != null && f.edgeOffset) f.edgeOffset.value = defaults.edgeOffset;
+      if (defaults.holeSpacing != null && f.holeSpacing) f.holeSpacing.value = defaults.holeSpacing;
+      if (defaults.startOffset != null && f.startOffset) f.startOffset.value = defaults.startOffset;
       if (defaults.h != null && f.h) f.h.value = defaults.h;
       if (defaults.qty != null) f.qty.value = defaults.qty;
     }
@@ -944,16 +1221,7 @@
       syncShapeUI(node);
       enhanceNumericInputs(node);
 
-      var previewBtn = node.querySelector('[data-preview]');
       var removeBtn = node.querySelector('[data-remove]');
-
-      if (previewBtn) {
-        previewBtn.addEventListener('click', function () {
-          activeItem = node;
-          updateItemTitles();
-          renderActivePreview();
-        });
-      }
 
       if (removeBtn) {
         removeBtn.addEventListener('click', function () {
@@ -974,22 +1242,62 @@
       node.querySelectorAll('[data-shape-choice]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           var f = itemFields(node);
-          if (f.shape) f.shape.value = btn.getAttribute('data-shape-choice') || 'circle';
+          var nextShape = btn.getAttribute('data-shape-choice') || 'circle';
+          if (f.holePattern && (!f.shape || f.shape.value !== nextShape || !f.holePattern.value)) {
+            f.holePattern.value = 'center';
+          }
+          if (f.shape) f.shape.value = nextShape;
+          activeItem = node;
           syncShapeUI(node);
-          if (node === activeItem) scheduleRender();
+          updateItemTitles();
+          scheduleRender();
           scheduleAutoCalculation();
         });
       });
 
+      node.querySelectorAll('[data-pattern-choice]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var f = itemFields(node);
+          if (f.holePattern) f.holePattern.value = btn.getAttribute('data-pattern-choice') || 'center';
+          activeItem = node;
+          syncShapeUI(node);
+          updateItemTitles();
+          scheduleRender();
+          scheduleAutoCalculation();
+        });
+      });
+
+      var changeShapeBtn = node.querySelector('[data-change-shape]');
+      if (changeShapeBtn) {
+        changeShapeBtn.addEventListener('click', function () {
+          var f = itemFields(node);
+          if (f.shape) f.shape.value = '';
+          if (f.holePattern) f.holePattern.value = '';
+          activeItem = node;
+          syncShapeUI(node);
+          updateItemTitles();
+          renderActivePreview();
+          scheduleAutoCalculation();
+        });
+      }
+
       node.querySelectorAll('input, select').forEach(function (input) {
         input.addEventListener('input', function () {
+          if (activeItem !== node) {
+            activeItem = node;
+            updateItemTitles();
+          }
           syncShapeUI(node);
-          if (node === activeItem) scheduleRender();
+          scheduleRender();
         }, { passive: true });
 
         input.addEventListener('change', function () {
+          if (activeItem !== node) {
+            activeItem = node;
+            updateItemTitles();
+          }
           syncShapeUI(node);
-          if (node === activeItem) scheduleRender();
+          scheduleRender();
         }, { passive: true });
       });
 
@@ -1050,7 +1358,10 @@
 
       if (!it) {
         var shapeField = activeItem.querySelector('[data-field="shape"]');
-        warn(els.svgWarn, shapeField && !shapeField.value ? I18N.choose_shape : I18N.invalid);
+        var patternField = activeItem.querySelector('[data-field="holePattern"]');
+        warn(els.svgWarn, shapeField && !shapeField.value
+          ? I18N.choose_shape
+          : (patternField && !patternField.value ? I18N.choose_pattern : I18N.invalid));
         return;
       }
 
@@ -1065,9 +1376,9 @@
       var rOuter = Math.max(outerW, outerH) / 2;
       var rInner = Math.max(innerW, innerH) / 2;
 
-      var d = outerPathForItem(it, cx, cy, scale) + ' ' + innerPathForItem(it, cx, cy, scale);
       var outerPath = outerPathForItem(it, cx, cy, scale);
       var innerPath = innerPathForItem(it, cx, cy, scale);
+      var d = outerPath + (innerPath ? ' ' + innerPath : '');
 
       if (drawingEls.ringFill) drawingEls.ringFill.setAttribute('d', d);
 
@@ -1078,10 +1389,10 @@
 
         setA(drawingEls.ringID, 'cx', cx);
         setA(drawingEls.ringID, 'cy', cy);
-        setA(drawingEls.ringID, 'r', it.innerShape === 'circle' ? innerW / 2 : 0);
+        setA(drawingEls.ringID, 'r', it.hasCenterHole && it.innerShape === 'circle' ? innerW / 2 : 0);
       } else {
         if (drawingEls.ringOuterPath) drawingEls.ringOuterPath.setAttribute('d', outerPath);
-        if (drawingEls.ringInnerPath) drawingEls.ringInnerPath.setAttribute('d', innerPath);
+        if (drawingEls.ringInnerPath) drawingEls.ringInnerPath.setAttribute('d', innerPath || '');
       }
 
       var outerDimensionLabel = it.shape === 'circle'
@@ -1092,7 +1403,9 @@
         : fmt(it.innerW, 1) + ' x ' + fmt(it.innerH, 1) + ' mm';
 
       drawDiameterDimension(drawingEls.odExtL, drawingEls.odExtR, drawingEls.odLine, drawingEls.odText, cx - outerW / 2, cx + outerW / 2, cy, 62, outerDimensionLabel, cx, -10);
-      drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy, 96, innerDimensionLabel, cx, -10);
+      if (it.hasCenterHole) {
+        drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy, 96, innerDimensionLabel, cx, -10);
+      }
 
       drawBoltPattern({
         cx: cx,
@@ -1102,7 +1415,9 @@
         scale: scale,
         pcd: it.pcd,
         holeDia: it.holeDia,
-        holeCount: it.holes
+        holeCount: it.holes,
+        holeCenters: it.holeCenters || [],
+        showPcd: it.holePattern === 'bolt-circle'
       });
 
       drawThickness({
@@ -1142,13 +1457,38 @@
     }
 
     function drawBoltPattern(cfg) {
-      var pcd = cfg.pcd;
-      var holeDia = cfg.holeDia;
-      var holeCount = cfg.holeCount;
+      var centers = cfg.holeCenters || [];
+      if (!centers.length || !(cfg.holeDia > 0)) return;
 
-      if (pcd && holeDia && holeCount > 0) {
-        var rPcd = (pcd / 2) * cfg.scale;
-        var rHole = (holeDia / 2) * cfg.scale;
+      var rHole = (cfg.holeDia / 2) * cfg.scale;
+      var NS = 'http://www.w3.org/2000/svg';
+
+      centers.forEach(function (hole) {
+        var circle = document.createElementNS(NS, 'circle');
+        circle.setAttribute('cx', cfg.cx + hole.x * cfg.scale);
+        circle.setAttribute('cy', cfg.cy + hole.y * cfg.scale);
+        circle.setAttribute('r', rHole);
+        drawingEls.holesG.appendChild(circle);
+      });
+
+      var first = centers[0];
+      var yDimHole = cfg.cy + cfg.rOuter + 92;
+      drawDiameterDimension(
+        drawingEls.holeExtL,
+        drawingEls.holeExtR,
+        drawingEls.holeLine,
+        drawingEls.holeText,
+        cfg.cx + first.x * cfg.scale - rHole,
+        cfg.cx + first.x * cfg.scale + rHole,
+        cfg.cy + first.y * cfg.scale,
+        yDimHole,
+        centers.length + ' × Ø ' + fmt(cfg.holeDia, 1) + ' mm',
+        cfg.cx,
+        16
+      );
+
+      if (cfg.showPcd && cfg.pcd > 0) {
+        var rPcd = (cfg.pcd / 2) * cfg.scale;
 
         if (drawingEls.pcdCircle) {
           drawingEls.pcdCircle.style.display = '';
@@ -1157,42 +1497,9 @@
           setA(drawingEls.pcdCircle, 'r', rPcd);
         }
 
-        var fits = rPcd - rHole > cfg.rInner + 2 && rPcd + rHole < cfg.rOuter - 2;
-
-        if (!fits) {
-          warn(els.svgWarn, I18N.bolt_no_fit);
-          return;
-        }
-
-        var NS = 'http://www.w3.org/2000/svg';
-        var step = (Math.PI * 2) / holeCount;
-        var rot = Math.PI / 2;
-
-        for (var i = 0; i < holeCount; i++) {
-          var angle = rot + i * step;
-          var circle = document.createElementNS(NS, 'circle');
-
-          circle.setAttribute('cx', cfg.cx + rPcd * Math.cos(angle));
-          circle.setAttribute('cy', cfg.cy + rPcd * Math.sin(angle));
-          circle.setAttribute('r', rHole);
-
-          drawingEls.holesG.appendChild(circle);
-        }
-
-        var yDimHole = cfg.cy + cfg.rOuter + 92;
         var yDimPCD = yDimHole + 48;
-
-        drawDiameterDimension(drawingEls.holeExtL, drawingEls.holeExtR, drawingEls.holeLine, drawingEls.holeText, cfg.cx - rHole, cfg.cx + rHole, cfg.cy + rPcd, yDimHole, 'Ø ' + fmt(holeDia, 1) + ' mm', cfg.cx, 16);
-        drawDiameterDimension(drawingEls.pcdExtL, drawingEls.pcdExtR, drawingEls.pcdLine, drawingEls.pcdText, cfg.cx - rPcd, cfg.cx + rPcd, cfg.cy, yDimPCD, 'PCD ' + fmt(pcd, 1) + ' mm', cfg.cx, 16);
-
-        return;
+        drawDiameterDimension(drawingEls.pcdExtL, drawingEls.pcdExtR, drawingEls.pcdLine, drawingEls.pcdText, cfg.cx - rPcd, cfg.cx + rPcd, cfg.cy, yDimPCD, 'PCD ' + fmt(cfg.pcd, 1) + ' mm', cfg.cx, 16);
       }
-
-      var filled = [pcd, holeDia, holeCount].filter(function (x) {
-        return x && x > 0;
-      }).length;
-
-      if (filled > 0 && filled < 3) warn(els.svgWarn, I18N.bolt_partial);
     }
 
     function drawThickness(cfg) {
@@ -1273,6 +1580,11 @@
       }, 450);
     }
 
+    function setCalculationBusy(busy) {
+      if (els.busy) els.busy.hidden = !busy;
+      if (els.nestRetry) els.nestRetry.disabled = !!busy;
+    }
+
     function outerArea(it) {
       if (it.shape === 'circle') return circleArea(it.od);
 
@@ -1288,7 +1600,8 @@
     }
 
     function ringArea(it) {
-      return Math.max(0, outerArea(it) - innerArea(it));
+      var extraHoleArea = (it.holeCenters || []).length * circleArea(it.holeDia);
+      return Math.max(0, outerArea(it) - innerArea(it) - extraHoleArea);
     }
 
     function outerPerimeter(it) {
@@ -1321,7 +1634,7 @@
         pierces += 1;
       }
 
-      if (it.shape === 'circle' && it.holes > 0 && it.holeDia > 0) {
+      if (it.holes > 0 && it.holeDia > 0) {
         if (holeMethod === 'punch') {
           punchedHoles += it.holes;
         } else {
@@ -1352,7 +1665,10 @@
           - discard: onderste reststrook rood tonen en niet meerekenen
           - charge: geen automatische rode reststrook door 30%-threshold
         */
-        wasteThresholdPct: remainderMode === 'discard' ? 30 : -1
+        wasteThresholdPct: remainderMode === 'discard' ? 30 : -1,
+        strategyIndex: nestingAttempt,
+        fastThreshold: 160,
+        candidateLimit: 260
       };
 
       return {
@@ -1466,6 +1782,49 @@
       if (event) event.preventDefault();
 
       options = options || {};
+      var requestId = ++calculationSequence;
+      setCalculationBusy(true);
+
+      window.setTimeout(function () {
+        if (requestId !== calculationSequence) return;
+
+        try {
+          calculatePriceNow(options);
+        } catch (error) {
+          console.error('Gasket configurator: nestingberekening mislukt.', error);
+          hideCalculatedResult();
+          warn(els.warnBox, I18N.calc_error);
+        } finally {
+          if (requestId === calculationSequence) setCalculationBusy(false);
+        }
+      }, 24);
+    }
+
+    function applyPlateRemainderChoices(packing, cfg) {
+      var plates = (packing && packing.plates) || [];
+      var plateArea = Math.max(1, cfg.W * cfg.H);
+
+      plates.forEach(function (plate, index) {
+        var baseAnalysis = Nesting.analyzePlate(plate.placed || [], cfg.W, cfg.H, cfg.edge, cfg.gap, {
+          materialMode: 'full_plate',
+          wasteThresholdPct: 20
+        });
+        var remainderRatio = baseAnalysis.bottomRemainder
+          ? baseAnalysis.bottomRemainder.areaMm2 / plateArea
+          : 0;
+        var isIntermediateSmallRemainder = index < plates.length - 1 && remainderRatio > 0 && remainderRatio <= 0.20;
+        var defaultDiscard = cfg.remainderMode === 'discard' || isIntermediateSmallRemainder;
+        var hasOverride = Object.prototype.hasOwnProperty.call(plateRemainderOverrides, index);
+
+        plate.remainderDiscarded = hasOverride
+          ? !!plateRemainderOverrides[index]
+          : defaultDiscard;
+      });
+    }
+
+    function calculatePriceNow(options) {
+
+      options = options || {};
 
       warn(els.warnBox, '');
 
@@ -1475,10 +1834,20 @@
         var shapeField = item.querySelector('[data-field="shape"]');
         return shapeField && !shapeField.value;
       });
+      var hasUnchosenPattern = itemNodes.some(function (item) {
+        var patternField = item.querySelector('[data-field="holePattern"]');
+        return patternField && !patternField.value;
+      });
 
       if (hasUnchosenShape) {
         hideCalculatedResult();
         if (!options.automatic) warn(els.warnBox, I18N.choose_shape);
+        return;
+      }
+
+      if (hasUnchosenPattern) {
+        hideCalculatedResult();
+        if (!options.automatic) warn(els.warnBox, I18N.choose_pattern);
         return;
       }
 
@@ -1515,6 +1884,8 @@
         warn(els.warnBox, I18N.no_fit);
         return;
       }
+
+      applyPlateRemainderChoices(packing, cfg);
 
       var mat = Nesting.totalMaterialArea(packing, cfg.W, cfg.H, cfg.edge, cfg.nestingOptions);
 
@@ -1568,11 +1939,7 @@
         totalCost: totalCost
       });
 
-      if (els.nestSvg) {
-        Drawing.drawNest(els.nestSvg, cfg.W, cfg.H, packing, items, cfg.edge, Nesting);
-      }
-
-      renderPriceResult({
+      var calculationData = {
         items: items,
         packing: packing,
         mat: mat,
@@ -1597,7 +1964,12 @@
         averagePricePerPiece: averagePricePerPiece,
         wastePct: wastePct,
         itemPrices: itemPrices
-      });
+      };
+
+      lastCalculationData = calculationData;
+      currentPlateIndex = Math.max(0, Math.min(currentPlateIndex, packing.plates.length - 1));
+      renderPriceResult(calculationData);
+      renderNestWorkspace(calculationData);
 
       if (els.calcBox) {
         els.calcBox.hidden = false;
@@ -1611,6 +1983,67 @@
       }
     }
 
+    function renderNestWorkspace(data) {
+      if (!data || !data.packing || !data.packing.plates || !data.packing.plates.length) return;
+
+      var plates = data.packing.plates;
+      currentPlateIndex = Math.max(0, Math.min(currentPlateIndex, plates.length - 1));
+
+      if (els.nestSvg) {
+        Drawing.drawNest(
+          els.nestSvg,
+          data.cfg.W,
+          data.cfg.H,
+          data.packing,
+          data.items,
+          data.cfg.edge,
+          Nesting,
+          { plateIndex: currentPlateIndex }
+        );
+      }
+
+      if (els.nestIndicator) {
+        els.nestIndicator.textContent = 'Plaat ' + (currentPlateIndex + 1) + ' van ' + plates.length;
+      }
+
+      if (els.nestPrev) els.nestPrev.disabled = currentPlateIndex <= 0;
+      if (els.nestNext) els.nestNext.disabled = currentPlateIndex >= plates.length - 1;
+
+      if (els.nestStrategy) {
+        var strategyLabels = ['Compacte indeling', 'Oppervlakte eerst', 'Breedte eerst'];
+        els.nestStrategy.textContent = data.packing.fastMode
+          ? 'Snelle indeling voor grote aantallen'
+          : (data.packing.layout && data.packing.layout.name
+            ? data.packing.layout.name
+            : strategyLabels[nestingAttempt]);
+      }
+
+      var plate = plates[currentPlateIndex];
+      var analysis = plate.analysis || Nesting.analyzePlate(plate.placed || [], data.cfg.W, data.cfg.H, data.cfg.edge, data.cfg.gap, {
+        materialMode: plate.remainderDiscarded ? 'used_strip' : 'full_plate',
+        wasteThresholdPct: 20
+      });
+      var remainderArea = analysis.bottomRemainder ? analysis.bottomRemainder.areaMm2 : 0;
+      var remainderPct = data.cfg.W * data.cfg.H > 0 ? remainderArea / (data.cfg.W * data.cfg.H) * 100 : 0;
+
+      if (els.plateRemainder) els.plateRemainder.checked = !!plate.remainderDiscarded;
+      if (els.plateRemainderText) {
+        els.plateRemainderText.textContent = fmt(remainderPct, 1) + '% onderste reststrook • ' +
+          (plate.remainderDiscarded ? 'rood en niet doorberekend' : 'wordt doorberekend');
+      }
+    }
+
+    function showPlate(index) {
+      if (!lastCalculationData || !lastCalculationData.packing) return;
+
+      var maxIndex = lastCalculationData.packing.plates.length - 1;
+      var nextIndex = Math.max(0, Math.min(maxIndex, index));
+      if (nextIndex === currentPlateIndex) return;
+
+      currentPlateIndex = nextIndex;
+      renderNestWorkspace(lastCalculationData);
+    }
+
     function renderPriceResult(data) {
       if (!els.priceResult) return;
 
@@ -1621,8 +2054,11 @@
         : data.mat.fullPlates;
 
       var restCost = discardedM2 * data.pricePerM2;
-      var restSummary = data.cfg.remainderMode === 'discard'
-        ? 'Reststuk niet doorgerekend: ' + fmt(discardedM2, 3) + ' m² (' + money(restCost) + ' materiaalwaarde).'
+      var discardedPlateCount = data.packing.plates.filter(function (plate) {
+        return plate.remainderDiscarded;
+      }).length;
+      var restSummary = discardedM2 > 0
+        ? 'Reststrook niet doorgerekend op ' + discardedPlateCount + ' plaat/platen: ' + fmt(discardedM2, 3) + ' m² (' + money(restCost) + ' materiaalwaarde).'
         : 'Restmateriaal wordt meegerekend in de materiaalprijs; doorberekend oppervlak is ' + fmt(chargedAreaM2, 3) + ' m².';
 
       var marginEuro = data.totalCost - data.subtotal;
@@ -1813,9 +2249,9 @@
         ? 'Boutgaten stansen'
         : 'Boutgaten CNC snijden';
 
-      var remainderLabel = data.cfg.remainderMode === 'discard'
-        ? 'Niet meegerekend en rood getoond als restafval'
-        : 'Meegerekend in materiaalprijs';
+      var remainderLabel = data.mat.discardedAreaMm2 > 0
+        ? fmt(data.mat.discardedAreaMm2 / 1000000, 3) + ' m² niet meegerekend en rood getoond'
+        : 'Alle reststroken meegerekend in materiaalprijs';
 
       return (
         '<strong>Pakkingregels</strong><br>' +
@@ -1883,26 +2319,27 @@
       var base = 'pakking-1stuk-' + safeFilePart(it.shape || 'rond');
 
       if (it.shape === 'circle') {
-        base +=
-          '-od' +
-          safeFilePart(num(it.od, 2)) +
-          '-id' +
-          safeFilePart(num(it.id, 2));
+        base += '-od' + safeFilePart(num(it.od, 2));
+        if (it.hasCenterHole) base += '-id' + safeFilePart(num(it.id, 2));
       } else {
         base +=
           '-' +
           safeFilePart(num(it.outerW, 2)) +
           'x' +
-          safeFilePart(num(it.outerH, 2)) +
-          '-binnen-' +
-          safeFilePart(it.innerShape || 'gat') +
-          '-' +
-          safeFilePart(num(it.innerW, 2)) +
-          'x' +
-          safeFilePart(num(it.innerH, 2));
+          safeFilePart(num(it.outerH, 2));
+
+        if (it.hasCenterHole) {
+          base +=
+            '-binnen-' +
+            safeFilePart(it.innerShape || 'gat') +
+            '-' +
+            safeFilePart(num(it.innerW, 2)) +
+            'x' +
+            safeFilePart(num(it.innerH, 2));
+        }
       }
 
-      if (it.pcd > 0 && it.holes > 0 && it.holeDia > 0) {
+      if (it.holePattern === 'bolt-circle' && it.pcd > 0 && it.holes > 0 && it.holeDia > 0) {
         base +=
           '-pcd' +
           safeFilePart(num(it.pcd, 2)) +
@@ -1916,24 +2353,9 @@
     }
 
     function holeCenters(it) {
-      var centers = [];
-
-      if (it.shape && it.shape !== 'circle') return centers;
-      if (!(it.pcd > 0) || !(it.holes > 0) || !(it.holeDia > 0)) return centers;
-
-      var rp = it.pcd / 2;
-
-      for (var h = 0; h < it.holes; h++) {
-        var angle = -Math.PI / 2 + (Math.PI * 2 * h) / it.holes;
-
-        centers.push({
-          x: rp * Math.cos(angle),
-          y: rp * Math.sin(angle),
-          r: it.holeDia / 2
-        });
-      }
-
-      return centers;
+      return (it.holeCenters || []).map(function (hole) {
+        return { x: hole.x, y: hole.y, r: hole.r };
+      });
     }
 
     function roundedRectPoints(w, h, r, steps) {
@@ -2062,13 +2484,13 @@
 
       if (it.shape === 'circle') {
         circle('CUT_OD', 0, 0, it.od / 2);
-        circle('CUT_ID', 0, 0, it.id / 2);
+        if (it.hasCenterHole) circle('CUT_ID', 0, 0, it.id / 2);
       } else {
         polyline('CUT_OD', roundedRectPoints(it.outerW, it.outerH, it.outerRadius, 10));
 
-        if (it.innerShape === 'rect' || it.innerShape === 'manhole') {
+        if (it.hasCenterHole && (it.innerShape === 'rect' || it.innerShape === 'manhole')) {
           polyline('CUT_ID', roundedRectPoints(it.innerW, it.innerH, it.innerRadius, 10));
-        } else {
+        } else if (it.hasCenterHole) {
           circle('CUT_ID', 0, 0, it.innerDia / 2);
         }
       }
@@ -2077,7 +2499,7 @@
         circle('CUT_HOLES', hole.x, hole.y, hole.r);
       });
 
-      if (it.pcd > 0 && it.holes > 0 && it.holeDia > 0) {
+      if (it.holePattern === 'bolt-circle' && it.pcd > 0 && it.holes > 0 && it.holeDia > 0) {
         circle('REF_PCD', 0, 0, it.pcd / 2);
       }
 
@@ -2120,13 +2542,15 @@
       }
       out += '  </g>\n';
 
-      out += '  <g id="CUT_ID" data-layer="CUT_ID" data-cut="true" stroke="#0066ff" fill="none" stroke-width="0.2">\n';
-      if (it.innerShape === 'circle') {
-        out += '    <circle cx="' + num(cx, 6) + '" cy="' + num(cy, 6) + '" r="' + num(it.innerDia / 2, 6) + '" />\n';
-      } else {
-        out += '    <path d="' + escXml(innerPathForItem(it, cx, cy, 1)) + '" />\n';
+      if (it.hasCenterHole) {
+        out += '  <g id="CUT_ID" data-layer="CUT_ID" data-cut="true" stroke="#0066ff" fill="none" stroke-width="0.2">\n';
+        if (it.innerShape === 'circle') {
+          out += '    <circle cx="' + num(cx, 6) + '" cy="' + num(cy, 6) + '" r="' + num(it.innerDia / 2, 6) + '" />\n';
+        } else {
+          out += '    <path d="' + escXml(innerPathForItem(it, cx, cy, 1)) + '" />\n';
+        }
+        out += '  </g>\n';
       }
-      out += '  </g>\n';
 
       if (holes.length) {
         out += '  <g id="CUT_HOLES" data-layer="CUT_HOLES" data-cut="true" stroke="#00a651" fill="none" stroke-width="0.2">\n';
@@ -2137,9 +2561,11 @@
 
         out += '  </g>\n';
 
-        out += '  <g id="REF_PCD" data-layer="REF_PCD" data-cut="false" stroke="#f0b400" fill="none" stroke-width="0.2" stroke-dasharray="4 3">\n';
-        out += '    <circle cx="' + num(cx, 6) + '" cy="' + num(cy, 6) + '" r="' + num(it.pcd / 2, 6) + '" />\n';
-        out += '  </g>\n';
+        if (it.holePattern === 'bolt-circle') {
+          out += '  <g id="REF_PCD" data-layer="REF_PCD" data-cut="false" stroke="#f0b400" fill="none" stroke-width="0.2" stroke-dasharray="4 3">\n';
+          out += '    <circle cx="' + num(cx, 6) + '" cy="' + num(cy, 6) + '" r="' + num(it.pcd / 2, 6) + '" />\n';
+          out += '  </g>\n';
+        }
       }
 
       out += '</svg>';
@@ -2163,6 +2589,7 @@
         var target = event.target;
         if (!target || !target.matches('input, select')) return;
         if (target.closest('[data-gcfg-pricing]')) return;
+        if (target.closest('[data-nesting-control]')) return;
         scheduleAutoCalculation();
       });
 
@@ -2170,8 +2597,53 @@
         var target = event.target;
         if (!target || !target.matches('input, select')) return;
         if (target.closest('[data-gcfg-pricing]')) return;
+        if (target.closest('[data-nesting-control]')) return;
         scheduleAutoCalculation();
       });
+
+      if (els.nestRetry) {
+        els.nestRetry.addEventListener('click', function () {
+          nestingAttempt = (nestingAttempt + 1) % 3;
+          currentPlateIndex = 0;
+          plateRemainderOverrides = {};
+          calculatePrice(null, { automatic: true });
+        });
+      }
+
+      if (els.nestPrev) {
+        els.nestPrev.addEventListener('click', function () {
+          showPlate(currentPlateIndex - 1);
+        });
+      }
+
+      if (els.nestNext) {
+        els.nestNext.addEventListener('click', function () {
+          showPlate(currentPlateIndex + 1);
+        });
+      }
+
+      if (els.plateRemainder) {
+        els.plateRemainder.addEventListener('change', function () {
+          plateRemainderOverrides[currentPlateIndex] = !!els.plateRemainder.checked;
+          calculatePrice(null, { automatic: true });
+        });
+      }
+
+      if (els.nestSvg) {
+        els.nestSvg.addEventListener('touchstart', function (event) {
+          var touch = event.touches && event.touches[0];
+          nestTouchStartX = touch ? touch.clientX : null;
+        }, { passive: true });
+
+        els.nestSvg.addEventListener('touchend', function (event) {
+          if (nestTouchStartX == null) return;
+          var touch = event.changedTouches && event.changedTouches[0];
+          var delta = touch ? touch.clientX - nestTouchStartX : 0;
+          nestTouchStartX = null;
+          if (Math.abs(delta) < 44) return;
+          showPlate(currentPlateIndex + (delta < 0 ? 1 : -1));
+        }, { passive: true });
+      }
 
       if (els.dxfBtn) {
         els.dxfBtn.addEventListener('click', function () {
