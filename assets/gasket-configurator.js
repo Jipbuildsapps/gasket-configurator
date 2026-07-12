@@ -1,6 +1,10 @@
 (function () {
   'use strict';
 
+  var mainScriptUrl = document.currentScript && document.currentScript.src
+    ? document.currentScript.src
+    : '';
+
   function onReady(fn) {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', fn);
@@ -28,10 +32,11 @@
   function initRoot(root) {
     if (!root || root.__gcfgInit) return;
 
+    var Core = window.GasketConfiguratorCore;
     var Nesting = window.GasketConfiguratorNesting;
     var Drawing = window.GasketConfiguratorDrawing;
 
-    if (!Nesting || !Drawing) {
+    if (!Core || !Nesting || !Drawing) {
       var retryCount = root.__gcfgRetryCount || 0;
 
       if (retryCount < 20) {
@@ -44,7 +49,7 @@
         return;
       }
 
-      console.error('Gasket configurator: nesting/drawing assets ontbreken of laden te laat.');
+      console.error('Gasket configurator: core/nesting/drawing assets ontbreken of laden te laat.');
       return;
     }
 
@@ -182,6 +187,25 @@
     var plateRemainderOverrides = {};
     var lastCalculationData = null;
     var nestTouchStartX = null;
+    var pricingIntent = null;
+    var activeNestingJob = null;
+
+    function findAssetUrl(filename) {
+      var scripts = Array.prototype.slice.call(document.querySelectorAll('script[src]'));
+
+      for (var i = 0; i < scripts.length; i++) {
+        var src = scripts[i].src || '';
+        if (src.indexOf(filename) !== -1) return src;
+      }
+
+      if (!mainScriptUrl || !window.URL) return '';
+
+      try {
+        return new window.URL(filename, mainScriptUrl).href;
+      } catch (error) {
+        return '';
+      }
+    }
 
     function updateStaticCopy() {
       var replacements = {
@@ -1256,7 +1280,7 @@
 
           updateItemTitles();
           renderActivePreview();
-          scheduleAutoCalculation();
+          scheduleAutoCalculation({ layoutChanged: true });
         });
       }
 
@@ -1270,7 +1294,7 @@
           syncShapeUI(node);
           updateItemTitles();
           scheduleRender();
-          scheduleAutoCalculation();
+          scheduleAutoCalculation({ layoutChanged: true });
         });
       });
 
@@ -1283,7 +1307,7 @@
           syncShapeUI(node);
           updateItemTitles();
           scheduleRender();
-          scheduleAutoCalculation();
+          scheduleAutoCalculation({ layoutChanged: true });
         });
       });
 
@@ -1296,7 +1320,7 @@
           syncShapeUI(node);
           updateItemTitles();
           scheduleRender();
-          scheduleAutoCalculation();
+          scheduleAutoCalculation({ layoutChanged: true });
         });
       }
 
@@ -1310,7 +1334,7 @@
           syncShapeUI(node);
           updateItemTitles();
           renderActivePreview();
-          scheduleAutoCalculation();
+          scheduleAutoCalculation({ layoutChanged: true });
         });
       }
 
@@ -1606,7 +1630,14 @@
       if (els.calcBox) els.calcBox.hidden = true;
     }
 
-    function scheduleAutoCalculation() {
+    function scheduleAutoCalculation(options) {
+      options = options || {};
+
+      if (options.layoutChanged) {
+        currentPlateIndex = 0;
+        plateRemainderOverrides = {};
+      }
+
       if (autoCalcTimer) window.clearTimeout(autoCalcTimer);
 
       autoCalcTimer = window.setTimeout(function () {
@@ -1726,7 +1757,7 @@
         moveSec: val(els.moveSec),
         finishSec: val(els.finishSec),
 
-        marginPct: val(els.marginPct),
+        marginPct: Core.clampMarginPct(val(els.marginPct)),
         minOrder: val(els.minOrder),
 
         remainderMode: remainderMode,
@@ -1758,14 +1789,14 @@
       return totals;
     }
 
-    function calculateItemPrices(items, cfg, totals, moneyData) {
+    function calculateItemPrices(items, cfg, moneyData) {
       var lines = [];
-
       var sharedMinutes = cfg.setupMin + moneyData.plateHandlingMinutes;
-
       var finalScale = moneyData.subtotal > 0
         ? moneyData.totalCost / moneyData.subtotal
         : 0;
+      var placements = [];
+      var allocationInputs = [];
 
       items.forEach(function (it) {
         var m = processMetricsPerPiece(it, cfg.holeMethod);
@@ -1784,17 +1815,11 @@
           itemPunchMinutes +
           itemFinishingMinutes;
 
-        var qtyShare = totals.qty > 0 ? it.qty / totals.qty : 0;
-        var materialShare = totals.ringArea > 0 ? (ringArea(it) * it.qty) / totals.ringArea : qtyShare;
-
-        var itemSharedMinutes = sharedMinutes * qtyShare;
-        var itemLaborMinutes = itemDirectMinutes + itemSharedMinutes;
-        var itemLaborCost = (itemLaborMinutes / 60) * cfg.hourRate;
-
-        var itemMaterialCost = moneyData.materialCost * materialShare;
-        var itemBaseCost = itemMaterialCost + itemLaborCost;
-        var itemTotalCost = itemBaseCost * finalScale;
-        var itemPiecePrice = it.qty > 0 ? itemTotalCost / it.qty : 0;
+        allocationInputs.push({
+          qty: it.qty,
+          outerArea: outerArea(it),
+          directMinutes: itemDirectMinutes
+        });
 
         lines.push({
           index: it.index,
@@ -1803,11 +1828,35 @@
           od: it.od,
           id: it.id,
           label: itemLabel(it),
-          materialCost: itemMaterialCost,
-          laborCost: itemLaborCost,
-          totalCost: itemTotalCost,
-          piecePrice: itemPiecePrice
+          directMinutes: itemDirectMinutes
         });
+      });
+
+      ((moneyData.packing && moneyData.packing.plates) || []).forEach(function (plate) {
+        placements = placements.concat(plate.placed || []);
+      });
+
+      var allocations = Core.allocateItemCosts(
+        allocationInputs,
+        placements,
+        moneyData.materialCost,
+        sharedMinutes,
+        cfg.hourRate
+      );
+
+      lines.forEach(function (line, index) {
+        var allocation = allocations[index] || { materialCost: 0, laborCost: 0 };
+        var itemMaterialCost = allocation.materialCost;
+        var itemLaborCost = allocation.laborCost;
+        var itemBaseCost = itemMaterialCost + itemLaborCost;
+        var itemTotalCost = itemBaseCost * finalScale;
+        var itemPiecePrice = line.qty > 0 ? itemTotalCost / line.qty : 0;
+
+        line.materialCost = itemMaterialCost;
+        line.laborCost = itemLaborCost;
+        line.totalCost = itemTotalCost;
+        line.piecePrice = itemPiecePrice;
+        delete line.directMinutes;
       });
 
       return lines;
@@ -1818,21 +1867,122 @@
 
       options = options || {};
       var requestId = ++calculationSequence;
+
+      if (activeNestingJob && activeNestingJob.cancel) {
+        activeNestingJob.cancel();
+      }
+
       setCalculationBusy(true);
 
       window.setTimeout(function () {
         if (requestId !== calculationSequence) return;
 
+        var operation;
+
         try {
-          calculatePriceNow(options);
+          operation = calculatePriceNow(options, requestId);
         } catch (error) {
           console.error('Gasket configurator: nestingberekening mislukt.', error);
           hideCalculatedResult();
           warn(els.warnBox, I18N.calc_error);
-        } finally {
           if (requestId === calculationSequence) setCalculationBusy(false);
+          return;
         }
+
+        Promise.resolve(operation).then(function () {
+          if (requestId === calculationSequence) setCalculationBusy(false);
+        }, function (error) {
+          console.error('Gasket configurator: nestingberekening mislukt.', error);
+          hideCalculatedResult();
+          warn(els.warnBox, I18N.calc_error);
+          if (requestId === calculationSequence) setCalculationBusy(false);
+        });
       }, 24);
+    }
+
+    function packSynchronously(items, cfg) {
+      return items.length === 1
+        ? Nesting.packSinglePattern(items[0], cfg.W, cfg.H, cfg.edge, cfg.gap, cfg.nestingOptions)
+        : Nesting.packMixedSmart(items, cfg.W, cfg.H, cfg.edge, cfg.gap, cfg.nestingOptions);
+    }
+
+    function packInBackground(items, cfg, requestId) {
+      var totalQty = items.reduce(function (sum, item) { return sum + item.qty; }, 0);
+      var singleRotatable = items.length === 1 &&
+        items[0].shape !== 'circle' &&
+        Math.abs(items[0].outerW - items[0].outerH) > 0.001;
+
+      if ((!singleRotatable && items.length < 2) || totalQty <= 100 || !window.Worker) return null;
+
+      var workerUrl = findAssetUrl('gasket-configurator-worker.js');
+      var nestingUrl = findAssetUrl('gasket-configurator-nesting.js');
+      if (!workerUrl || !nestingUrl) return null;
+
+      return new Promise(function (resolve) {
+        var worker;
+        var timeoutId;
+        var settled = false;
+        var job = {};
+
+        function cleanup() {
+          if (timeoutId) window.clearTimeout(timeoutId);
+          if (worker) worker.terminate();
+          if (activeNestingJob === job) activeNestingJob = null;
+        }
+
+        function finish(packing) {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(packing);
+        }
+
+        function fallback() {
+          if (requestId !== calculationSequence) {
+            finish(null);
+            return;
+          }
+
+          finish(packSynchronously(items, cfg));
+        }
+
+        job.cancel = function () {
+          finish(null);
+        };
+
+        try {
+          worker = new window.Worker(workerUrl);
+        } catch (error) {
+          fallback();
+          return;
+        }
+
+        activeNestingJob = job;
+        timeoutId = window.setTimeout(fallback, 20000);
+
+        worker.addEventListener('message', function (event) {
+          var data = event && event.data ? event.data : {};
+          if (data.requestId !== requestId) return;
+          if (data.error || !data.packing) {
+            fallback();
+            return;
+          }
+
+          data.packing.backgroundMode = true;
+          finish(data.packing);
+        });
+        worker.addEventListener('error', fallback);
+        worker.postMessage({
+          requestId: requestId,
+          nestingUrl: nestingUrl,
+          items: items,
+          width: cfg.W,
+          height: cfg.H,
+          edge: cfg.edge,
+          gap: cfg.gap,
+          options: cfg.nestingOptions
+        });
+      });
     }
 
     function applyPlateRemainderChoices(packing, cfg) {
@@ -1857,7 +2007,7 @@
       });
     }
 
-    function calculatePriceNow(options) {
+    function calculatePriceNow(options, requestId) {
 
       options = options || {};
 
@@ -1878,7 +2028,7 @@
 
       if (!items.length || items.length !== itemNodes.length) {
         hideCalculatedResult();
-        if (!options.automatic) warn(els.warnBox, itemNodes.length ? I18N.invalid : I18N.no_items);
+        warn(els.warnBox, itemNodes.length ? I18N.invalid : I18N.no_items);
         return;
       }
 
@@ -1893,10 +2043,20 @@
       }
 
       var cfg = readCostSettings();
+      var backgroundPacking = packInBackground(items, cfg, requestId);
 
-      var packing = items.length === 1
-        ? Nesting.packSinglePattern(items[0], cfg.W, cfg.H, cfg.edge, cfg.gap, cfg.nestingOptions)
-        : Nesting.packMixedSmart(items, cfg.W, cfg.H, cfg.edge, cfg.gap, cfg.nestingOptions);
+      if (backgroundPacking) {
+        return backgroundPacking.then(function (packing) {
+          if (!packing || requestId !== calculationSequence) return;
+          finishPriceCalculation(items, cfg, packing, options, requestId);
+        });
+      }
+
+      return finishPriceCalculation(items, cfg, packSynchronously(items, cfg), options, requestId);
+    }
+
+    function finishPriceCalculation(items, cfg, packing, options, requestId) {
+      if (requestId !== calculationSequence) return;
 
       if (packing.notFit && packing.notFit.length) {
         hideCalculatedResult();
@@ -1945,14 +2105,13 @@
 
       var laborCost = (totalMinutes / 60) * cfg.hourRate;
       var subtotal = materialCost + laborCost;
-      var withMargin = subtotal * (1 + cfg.marginPct / 100);
-      var totalCost = Math.max(withMargin, cfg.minOrder);
+      var totalCost = Core.resolveSalePrice(subtotal, cfg.marginPct, cfg.minOrder, pricingIntent);
       var averagePricePerPiece = totals.qty > 0 ? totalCost / totals.qty : 0;
       var wastePct = mat.areaMm2 > 0 ? ((mat.areaMm2 - totals.ringArea) / mat.areaMm2) * 100 : 0;
 
       var lastPlate = packing.plates[packing.plates.length - 1] || { placed: [] };
 
-      var itemPrices = calculateItemPrices(items, cfg, totals, {
+      var itemPrices = calculateItemPrices(items, cfg, {
         materialCost: materialCost,
         plateHandlingMinutes: plateHandlingMinutes,
         cutMinutes: cutMinutes,
@@ -1961,7 +2120,8 @@
         punchMinutes: punchMinutes,
         finishingMinutes: finishingMinutes,
         subtotal: subtotal,
-        totalCost: totalCost
+        totalCost: totalCost,
+        packing: packing
       });
 
       var calculationData = {
@@ -2040,9 +2200,11 @@
         var strategyLabels = ['Gemengde indeling', 'Oppervlakte eerst', 'Breedte eerst'];
         els.nestStrategy.textContent = data.packing.fastMode
           ? 'Snelle indeling voor grote aantallen'
+          : (data.packing.backgroundMode
+            ? 'Uitgebreide achtergrondindeling'
           : (data.packing.layout && data.packing.layout.name
             ? data.packing.layout.name
-            : strategyLabels[nestingAttempt]);
+            : strategyLabels[nestingAttempt]));
       }
 
       var plate = plates[currentPlateIndex];
@@ -2089,7 +2251,7 @@
         : 'Restmateriaal wordt meegerekend in de materiaalprijs; doorberekend oppervlak is ' + fmt(chargedAreaM2, 3) + ' m².';
 
       var marginEuro = data.totalCost - data.subtotal;
-      var marginPct = data.subtotal > 0 ? (marginEuro / data.subtotal) * 100 : 0;
+      var marginPct = Core.grossMarginPct(data.subtotal, data.totalCost);
 
       els.priceResult.innerHTML =
         '<div class="gcfg__resultSummary" data-gcfg-pricing>' +
@@ -2097,9 +2259,9 @@
             resultMetric('Plaatmateriaal', fmt(chargedAreaM2, 3) + ' m²', money(data.materialCost), restSummary) +
             resultMetric('Tijd', fmt(data.totalMinutes, 1) + ' min', money(data.laborCost), 'Totale machine-/arbeidstijd en tijdkosten.') +
             resultMetric('Kostprijs', money(data.subtotal), 'materiaal + tijd', 'Exclusief marge; minimum orderbedrag staat hieronder bij details.') +
-            editableResultMetric('Verkoopprijs', 'salePrice', num(data.totalCost, 2), '0.01', '€', '', 'Klik op de waarde om de verkoopprijs aan te passen.') +
-            editableResultMetric('Marge %', 'marginPct', num(marginPct, 2), '0.1', '', '%', 'Past live mee met de verkoopprijs.') +
-            editableResultMetric('Marge €', 'marginEuro', num(marginEuro, 2), '0.01', '€', '', 'Marge in euro voor de hele bestelling.') +
+            editableResultMetric('Verkoopprijs', 'salePrice', num(data.totalCost, 2), '0.01', '€', '', 'Klik op de waarde om de verkoopprijs vast te zetten.', 0, null) +
+            editableResultMetric('Brutomarge %', 'marginPct', num(marginPct, 2), '0.1', '', '%', 'Blijft bij nieuwe maten als percentage behouden.', 0, 99.9) +
+            editableResultMetric('Marge €', 'marginEuro', num(marginEuro, 2), '0.01', '€', '', 'Blijft bij nieuwe maten als eurobedrag behouden.', 0, null) +
           '</div>' +
 
           '<div class="gcfg__resultNote" data-gcfg-value="minimumWarning">' +
@@ -2133,13 +2295,16 @@
       );
     }
 
-    function editableResultMetric(label, key, value, step, prefix, suffix, hint) {
+    function editableResultMetric(label, key, value, step, prefix, suffix, hint, minValue, maxValue) {
+      var range = minValue != null ? ' min="' + minValue + '"' : '';
+      if (maxValue != null) range += ' max="' + maxValue + '"';
+
       return (
         '<div class="gcfg__metric gcfg__metric--editable">' +
           '<span class="gcfg__metricLabel">' + label + '</span>' +
           '<span class="gcfg__editableValue">' +
             (prefix ? '<span class="gcfg__valueAffix">' + prefix + '</span>' : '') +
-            '<input class="gcfg__input gcfg__priceInput" type="number" min="0" step="' + step + '" value="' + value + '" aria-label="' + label + '" data-gcfg-input="' + key + '">' +
+            '<input class="gcfg__input gcfg__priceInput" type="number"' + range + ' step="' + step + '" value="' + value + '" aria-label="' + label + '" data-gcfg-input="' + key + '">' +
             (suffix ? '<span class="gcfg__valueAffix">' + suffix + '</span>' : '') +
           '</span>' +
           '<span class="gcfg__metricHint">' + hint + '</span>' +
@@ -2196,7 +2361,7 @@
         salePrice = Math.max(0, salePrice);
 
         var marginEuro = salePrice - data.subtotal;
-        var marginPct = data.subtotal > 0 ? (marginEuro / data.subtotal) * 100 : 0;
+        var marginPct = Core.grossMarginPct(data.subtotal, salePrice);
         var average = data.totals.qty > 0 ? salePrice / data.totals.qty : 0;
 
         syncing = true;
@@ -2219,22 +2384,27 @@
       if (saleInput) {
         saleInput.addEventListener('input', function () {
           if (syncing) return;
-          renderState(readInput(saleInput, data.totalCost), 'sale');
+          var salePrice = readInput(saleInput, data.totalCost);
+          pricingIntent = { mode: 'salePrice', value: salePrice };
+          renderState(salePrice, 'sale');
         });
       }
 
       if (marginPctInput) {
         marginPctInput.addEventListener('input', function () {
           if (syncing) return;
-          var pct = readInput(marginPctInput, data.cfg.marginPct);
-          renderState(data.subtotal * (1 + pct / 100), 'pct');
+          var pct = Core.clampMarginPct(readInput(marginPctInput, data.cfg.marginPct));
+          pricingIntent = { mode: 'marginPct', value: pct };
+          renderState(Core.salePriceForMargin(data.subtotal, pct), 'pct');
         });
       }
 
       if (marginEuroInput) {
         marginEuroInput.addEventListener('input', function () {
           if (syncing) return;
-          renderState(data.subtotal + readInput(marginEuroInput, 0), 'euro');
+          var marginEuro = readInput(marginEuroInput, 0);
+          pricingIntent = { mode: 'marginEuro', value: marginEuro };
+          renderState(data.subtotal + marginEuro, 'euro');
         });
       }
 
@@ -2268,7 +2438,7 @@
           '<em>Grijze posities zijn vrije posities en tellen niet mee.</em><br>';
       } else {
         layoutInfo =
-          'Slimme gemixte indeling: grote pakkingen eerst, daarna kleinere in vrije ruimtes en indien mogelijk in binnendiameters.<br>' +
+          'Slimme gemixte indeling: pakkingtypes worden afgewisseld en vrije ruimtes en bruikbare binnendiameters worden benut.<br>' +
           '<em>Bij meerdere pakkingtypes worden grijze vrije posities uitgezet om verwarring te voorkomen.</em><br>';
       }
 
@@ -2297,6 +2467,7 @@
         'Niet meegerekend/restmateriaal: ' + fmt(discardedM2, 3) + ' m²<br>' +
         'Prijs per m² materiaal: ' + money(data.pricePerM2) + '<br>' +
         'Materiaalkosten: ' + money(data.materialCost) + '<br>' +
+        'Verdeling per type: buitenblank per niet-genest stuk; geneste stukken gebruiken restmateriaal.<br>' +
         'Indicatief verlies binnen strook/platen: ' + fmt(Math.max(0, data.wastePct), 1) + '%<br><br>' +
 
         '<strong>Bewerking</strong><br>' +
@@ -2320,7 +2491,7 @@
 
         '<strong>Prijsinstellingen</strong><br>' +
         'Subtotaal/kostprijs: ' + money(data.subtotal) + '<br>' +
-        'Ingestelde marge/opslag: ' + fmt(data.cfg.marginPct, 1) + '%<br>' +
+        'Ingestelde brutomarge: ' + fmt(Core.grossMarginPct(data.subtotal, data.totalCost), 1) + '%<br>' +
         'Minimum orderbedrag: ' + money(data.cfg.minOrder)
       );
     }
@@ -2453,26 +2624,43 @@
       }
 
       function line(layerName, x1, y1, x2, y2) {
+        lineXY(layerName, x1, -y1, x2, -y2);
+      }
+
+      function lineXY(layerName, x1, y1, x2, y2) {
         add(
           0, 'LINE',
           8, layerName,
           10, num(x1, 6),
-          20, num(-y1, 6),
+          20, num(y1, 6),
           30, 0,
           11, num(x2, 6),
-          21, num(-y2, 6),
+          21, num(y2, 6),
           31, 0
         );
       }
 
-      function polyline(layerName, points) {
-        if (!points || points.length < 2) return;
+      function arcXY(layerName, cx, cy, radius, startAngle, endAngle) {
+        add(
+          0, 'ARC',
+          8, layerName,
+          10, num(cx, 6),
+          20, num(cy, 6),
+          30, 0,
+          40, num(radius, 6),
+          50, num(startAngle, 6),
+          51, num(endAngle, 6)
+        );
+      }
 
-        for (var i = 0; i < points.length; i++) {
-          var a = points[i];
-          var b = points[(i + 1) % points.length];
-          line(layerName, a.x, a.y, b.x, b.y);
-        }
+      function roundedRect(layerName, width, height, radius) {
+        Core.roundedRectEntities(width, height, radius).forEach(function (entity) {
+          if (entity.type === 'arc') {
+            arcXY(layerName, entity.cx, entity.cy, entity.r, entity.startAngle, entity.endAngle);
+          } else {
+            lineXY(layerName, entity.x1, entity.y1, entity.x2, entity.y2);
+          }
+        });
       }
 
       add(
@@ -2513,10 +2701,10 @@
         circle('CUT_OD', 0, 0, it.od / 2);
         if (it.hasCenterHole) circle('CUT_ID', 0, 0, it.id / 2);
       } else {
-        polyline('CUT_OD', roundedRectPoints(it.outerW, it.outerH, it.outerRadius, 10));
+        roundedRect('CUT_OD', it.outerW, it.outerH, it.outerRadius);
 
         if (it.hasCenterHole && (it.innerShape === 'rect' || it.innerShape === 'manhole')) {
-          polyline('CUT_ID', roundedRectPoints(it.innerW, it.innerH, it.innerRadius, 10));
+          roundedRect('CUT_ID', it.innerW, it.innerH, it.innerRadius);
         } else if (it.hasCenterHole) {
           circle('CUT_ID', 0, 0, it.innerDia / 2);
         }
@@ -2608,8 +2796,21 @@
       if (els.addItemBtn) {
         els.addItemBtn.addEventListener('click', function () {
           addItem();
-          scheduleAutoCalculation();
+          scheduleAutoCalculation({ layoutChanged: true });
         });
+      }
+
+      function scheduleFromField(target) {
+        if (target === els.marginPct) pricingIntent = null;
+
+        var layoutChanged = !!target.closest('[data-gasket-item]') ||
+          target === els.plateW ||
+          target === els.plateH ||
+          target === els.edge ||
+          target === els.gap ||
+          target === els.remainderMode;
+
+        scheduleAutoCalculation({ layoutChanged: layoutChanged });
       }
 
       root.addEventListener('input', function (event) {
@@ -2617,7 +2818,7 @@
         if (!target || !target.matches('input, select')) return;
         if (target.closest('[data-gcfg-pricing]')) return;
         if (target.closest('[data-nesting-control]')) return;
-        scheduleAutoCalculation();
+        scheduleFromField(target);
       });
 
       root.addEventListener('change', function (event) {
@@ -2625,7 +2826,7 @@
         if (!target || !target.matches('input, select')) return;
         if (target.closest('[data-gcfg-pricing]')) return;
         if (target.closest('[data-nesting-control]')) return;
-        scheduleAutoCalculation();
+        scheduleFromField(target);
       });
 
       if (els.nestRetry) {
