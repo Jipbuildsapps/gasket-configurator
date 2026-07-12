@@ -93,11 +93,11 @@
   </div>
 
   <main>
-<link rel="stylesheet" href="./assets/gasket-configurator.css">
-<script src="./assets/gasket-configurator-core.js" defer></script>
-<script src="./assets/gasket-configurator-nesting.js" defer></script>
-<script src="./assets/gasket-configurator-drawing.js" defer></script>
-<script src="./assets/gasket-configurator.js" defer></script>
+<link rel="stylesheet" href="./gasket-configurator.css">
+<script src="./gasket-configurator-core.js" defer></script>
+<script src="./gasket-configurator-nesting.js" defer></script>
+<script src="./gasket-configurator-drawing.js" defer></script>
+<script src="./gasket-configurator.js" defer></script>
 
 <div id="gasket-configurator-preview" class="gcfg" data-section-id="preview">
   <script type="application/json" data-gasket-variants>
@@ -304,6 +304,7 @@
       <div id="gasket-configurator-preview-warn" class="gcfg__warn" aria-live="polite"></div>
     </div>
 
+    <div class="gcfg__output">
     <div class="gcfg__preview">
       <div class="gcfg__card">
         <div class="gcfg__head">
@@ -311,7 +312,12 @@
           <span class="gcfg__headSub">Geselecteerde pakking of getoonde plaat.</span>
         </div>
 
-        <svg class="gcfg__svg" viewBox="0 0 640 560" role="img" aria-label="Pakking schema">
+        <svg class="gcfg__svg" viewBox="0 0 640 560" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Pakking schema">
+          <defs>
+            <marker id="gasket-configurator-preview-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+            </marker>
+          </defs>
           <path class="ringFill" fill="rgba(20,106,91,0.18)" stroke="rgba(20,106,91,0.72)" stroke-width="2"></path>
           <path class="ringOuterPath"></path>
           <path class="ringInnerPath"></path>
@@ -323,22 +329,17 @@
           <g class="dims">
             <line class="dim-ext od-ext-l"></line>
             <line class="dim-ext od-ext-r"></line>
-            <line class="dim-line od-line"></line>
+            <line class="dim-line od-line" marker-start="url(#gasket-configurator-preview-arrow)" marker-end="url(#gasket-configurator-preview-arrow)"></line>
             <text class="dim-text od-text" text-anchor="middle"></text>
 
             <line class="dim-ext id-ext-l"></line>
             <line class="dim-ext id-ext-r"></line>
-            <line class="dim-line id-line"></line>
+            <line class="dim-line id-line" marker-start="url(#gasket-configurator-preview-arrow)" marker-end="url(#gasket-configurator-preview-arrow)"></line>
             <text class="dim-text id-text" text-anchor="middle"></text>
-
-            <line class="dim-ext hole-ext-l"></line>
-            <line class="dim-ext hole-ext-r"></line>
-            <line class="dim-line hole-line"></line>
-            <text class="dim-text hole-text" text-anchor="middle"></text>
 
             <line class="dim-ext pcd-ext-l"></line>
             <line class="dim-ext pcd-ext-r"></line>
-            <line class="dim-line pcd-line"></line>
+            <line class="dim-line pcd-line" marker-start="url(#gasket-configurator-preview-arrow)" marker-end="url(#gasket-configurator-preview-arrow)"></line>
             <text class="dim-text pcd-text" text-anchor="middle"></text>
           </g>
 
@@ -401,6 +402,7 @@
           </label>
         </div>
       </div>
+    </div>
     </div>
   </div>
 
