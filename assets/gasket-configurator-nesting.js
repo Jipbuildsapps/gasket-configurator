@@ -18,33 +18,63 @@ window.GasketConfiguratorNesting = (function () {
     return Math.max(min, Math.min(max, n));
   }
 
+  function pieceCornerRadius(piece) {
+    if (!piece) return 0;
+    if (isCirclePiece(piece)) return Math.min(piece.halfW, piece.halfH);
+
+    return clamp(
+      num(piece.cornerRadius, 0),
+      0,
+      Math.min(piece.halfW, piece.halfH)
+    );
+  }
+
   function piecesOverlap(a, ax, ay, b, bx, by, gap) {
     var eps = 0.001;
     gap = Math.max(0, gap || 0);
+    var radiusA = pieceCornerRadius(a);
+    var radiusB = pieceCornerRadius(b);
+    var coreHalfWA = Math.max(0, a.halfW - radiusA);
+    var coreHalfHA = Math.max(0, a.halfH - radiusA);
+    var coreHalfWB = Math.max(0, b.halfW - radiusB);
+    var coreHalfHB = Math.max(0, b.halfH - radiusB);
+    var separationX = Math.abs(ax - bx) - (coreHalfWA + coreHalfWB);
+    var separationY = Math.abs(ay - by) - (coreHalfHA + coreHalfHB);
 
-    if (isCirclePiece(a) && isCirclePiece(b)) {
-      return Math.sqrt(Math.pow(ax - bx, 2) + Math.pow(ay - by, 2)) < a.r + b.r + gap - eps;
+    if (separationX < -eps && separationY < -eps) return true;
+
+    var outsideX = Math.max(0, separationX);
+    var outsideY = Math.max(0, separationY);
+    var coreDistance = Math.sqrt(outsideX * outsideX + outsideY * outsideY);
+
+    return coreDistance < radiusA + radiusB + gap - eps;
+  }
+
+  function orientedPiece(piece, rotation) {
+    var rotated = rotation === 90;
+    var copy = {};
+
+    Object.keys(piece).forEach(function (key) {
+      copy[key] = piece[key];
+    });
+
+    copy.rotation = rotated ? 90 : 0;
+    copy.width = rotated ? piece.height : piece.width;
+    copy.height = rotated ? piece.width : piece.height;
+    copy.halfW = copy.width / 2;
+    copy.halfH = copy.height / 2;
+
+    return copy;
+  }
+
+  function orientationVariants(piece) {
+    var variants = [orientedPiece(piece, 0)];
+
+    if (!isCirclePiece(piece) && Math.abs(piece.width - piece.height) > 0.001) {
+      variants.push(orientedPiece(piece, 90));
     }
 
-    if (!isCirclePiece(a) && !isCirclePiece(b)) {
-      return (
-        Math.abs(ax - bx) < a.halfW + b.halfW + gap - eps &&
-        Math.abs(ay - by) < a.halfH + b.halfH + gap - eps
-      );
-    }
-
-    var circle = isCirclePiece(a)
-      ? { piece: a, x: ax, y: ay }
-      : { piece: b, x: bx, y: by };
-    var rect = isCirclePiece(a)
-      ? { piece: b, x: bx, y: by }
-      : { piece: a, x: ax, y: ay };
-    var closestX = clamp(circle.x, rect.x - rect.piece.halfW, rect.x + rect.piece.halfW);
-    var closestY = clamp(circle.y, rect.y - rect.piece.halfH, rect.y + rect.piece.halfH);
-    var dx = circle.x - closestX;
-    var dy = circle.y - closestY;
-
-    return Math.sqrt(dx * dx + dy * dy) < circle.piece.r + gap - eps;
+    return variants;
   }
 
   function normalizeOptions(options) {
@@ -72,6 +102,9 @@ window.GasketConfiguratorNesting = (function () {
       var id = num(it.id, 0);
       var width = num(it.outerW, od);
       var height = num(it.outerH, od);
+      var cornerRadius = (it.shape || 'circle') === 'circle'
+        ? od / 2
+        : clamp(num(it.outerRadius, 0), 0, Math.min(width, height) / 2);
 
       for (var i = 0; i < qty; i++) {
         pieces.push({
@@ -84,6 +117,8 @@ window.GasketConfiguratorNesting = (function () {
           height: height,
           halfW: width / 2,
           halfH: height / 2,
+          cornerRadius: cornerRadius,
+          rotation: 0,
           id: id,
           innerR: (it.shape || 'circle') === 'circle' ? id / 2 : 0,
           pcd: num(it.pcd, 0),
@@ -121,6 +156,12 @@ window.GasketConfiguratorNesting = (function () {
       piece.width + edge * 2 <= W + 0.001 &&
       piece.height + edge * 2 <= H + 0.001
     );
+  }
+
+  function pieceFitsAnyOrientation(piece, W, H, edge) {
+    return orientationVariants(piece).some(function (variant) {
+      return pieceFitsPlate(variant, W, H, edge);
+    });
   }
 
   function isInsideHostHole(host, piece, x, y, gap) {
@@ -333,32 +374,39 @@ window.GasketConfiguratorNesting = (function () {
   }
 
   function findBestPlacementOnPlate(plate, piece, W, H, edge, gap) {
-    var candidates = candidatePositions(plate, piece, W, H, edge, gap);
     var best = null;
+    var variants = orientationVariants(piece);
 
-    for (var i = 0; i < candidates.length; i++) {
-      var c = candidates[i];
+    for (var vi = 0; vi < variants.length; vi++) {
+      var variant = variants[vi];
+      var candidates = candidatePositions(plate, variant, W, H, edge, gap);
 
-      if (!canPlaceAt(plate, piece, c.x, c.y, W, H, edge, gap)) continue;
+      for (var i = 0; i < candidates.length; i++) {
+        var c = candidates[i];
 
-      var inHole = !!findHostHole(plate, piece, c.x, c.y, gap);
-      var b = boundsAfterPlace(plate, piece, c.x, c.y);
+        if (!canPlaceAt(plate, variant, c.x, c.y, W, H, edge, gap)) continue;
 
-      var score =
-        b.area +
-        b.height * W * 0.25 +
-        c.y * W * 0.01 +
-        c.x * 0.01;
+        var inHole = !!findHostHole(plate, variant, c.x, c.y, gap);
+        var b = boundsAfterPlace(plate, variant, c.x, c.y);
 
-      if (inHole) score -= W * H * 10;
+        var score =
+          b.area +
+          b.height * W * 0.25 +
+          c.y * W * 0.01 +
+          c.x * 0.01;
 
-      if (!best || score < best.score) {
-        best = {
-          x: c.x,
-          y: c.y,
-          score: score,
-          inHole: inHole
-        };
+        if (inHole) score -= W * H * 10;
+
+        if (!best || score < best.score) {
+          best = {
+            x: c.x,
+            y: c.y,
+            score: score,
+            inHole: inHole,
+            piece: variant,
+            rotation: variant.rotation || 0
+          };
+        }
       }
     }
 
@@ -376,6 +424,8 @@ window.GasketConfiguratorNesting = (function () {
       height: piece.height,
       halfW: piece.halfW,
       halfH: piece.halfH,
+      cornerRadius: piece.cornerRadius,
+      rotation: piece.rotation || 0,
       id: piece.id,
       innerR: piece.innerR,
       pcd: piece.pcd,
@@ -584,7 +634,7 @@ window.GasketConfiguratorNesting = (function () {
     var notFit = [];
 
     pieces.forEach(function (piece) {
-      if (!pieceFitsPlate(piece, W, H, edge)) {
+      if (!pieceFitsAnyOrientation(piece, W, H, edge)) {
         notFit.push(piece);
         return;
       }
@@ -609,7 +659,7 @@ window.GasketConfiguratorNesting = (function () {
 
       if (best) {
         plates[best.plateIndex].placed.push(
-          clonePieceAt(piece, best.placement.x, best.placement.y, best.placement.inHole)
+          clonePieceAt(best.placement.piece, best.placement.x, best.placement.y, best.placement.inHole)
         );
 
         return;
@@ -623,7 +673,7 @@ window.GasketConfiguratorNesting = (function () {
         return;
       }
 
-      newPlate.placed.push(clonePieceAt(piece, newPlacement.x, newPlacement.y, false));
+      newPlate.placed.push(clonePieceAt(newPlacement.piece, newPlacement.x, newPlacement.y, false));
       plates.push(newPlate);
     });
 
@@ -635,7 +685,7 @@ window.GasketConfiguratorNesting = (function () {
 
     return {
       mode: 'mixed',
-      strategy: 'simple-smart-nesting-bottom-remainder-aware',
+      strategy: 'shape-aware-rotating-bottom-remainder-aware',
       plates: plates,
       notFit: notFit,
       totalPieces: pieces.length,
@@ -709,14 +759,36 @@ window.GasketConfiguratorNesting = (function () {
     var od = num(item.od, 0);
     var width = num(item.outerW, od);
     var height = num(item.outerH, od);
+    var shape = item.shape || 'circle';
+    var cornerRadius = shape === 'circle'
+      ? od / 2
+      : clamp(num(item.outerRadius, 0), 0, Math.min(width, height) / 2);
 
     var grid = makeGrid(width, height, W, H, edge, gap);
-    var staggered = (item.shape || 'circle') === 'circle'
+    var rotatedGrid = shape !== 'circle' && Math.abs(width - height) > 0.001
+      ? makeGrid(height, width, W, H, edge, gap)
+      : [];
+    var staggered = shape === 'circle'
       ? makeStaggered(width, height, W, H, edge, gap)
       : [];
+    var positions = grid;
+    var layoutName = 'Rasterpatroon';
+    var rotation = 0;
 
-    var positions = staggered.length > grid.length ? staggered : grid;
-    var layoutName = staggered.length > grid.length ? 'Versprongen patroon' : 'Rasterpatroon';
+    if (rotatedGrid.length > positions.length) {
+      positions = rotatedGrid;
+      layoutName = 'Gedraaid rasterpatroon';
+      rotation = 90;
+    }
+
+    if (staggered.length > positions.length) {
+      positions = staggered;
+      layoutName = 'Versprongen patroon';
+      rotation = 0;
+    }
+
+    var placedWidth = rotation === 90 ? height : width;
+    var placedHeight = rotation === 90 ? width : height;
 
     var perPlate = positions.length;
 
@@ -752,13 +824,15 @@ window.GasketConfiguratorNesting = (function () {
         placed.push({
           item: item,
           itemIndex: 0,
-          shape: item.shape || 'circle',
+          shape: shape,
           od: od,
           r: od / 2,
-          width: width,
-          height: height,
-          halfW: width / 2,
-          halfH: height / 2,
+          width: placedWidth,
+          height: placedHeight,
+          halfW: placedWidth / 2,
+          halfH: placedHeight / 2,
+          cornerRadius: cornerRadius,
+          rotation: rotation,
           id: num(item.id, 0),
           innerR: (item.shape || 'circle') === 'circle' ? num(item.id, 0) / 2 : 0,
           pcd: num(item.pcd, 0),
@@ -772,7 +846,7 @@ window.GasketConfiguratorNesting = (function () {
 
       var plate = {
         placed: placed,
-        ghostPositions: positions.slice(usedCount),
+        ghostPositions: [],
         usedCount: usedCount
       };
 
@@ -795,7 +869,9 @@ window.GasketConfiguratorNesting = (function () {
         name: layoutName,
         positions: positions,
         gridCount: grid.length,
-        staggeredCount: staggered.length
+        staggeredCount: staggered.length,
+        rotatedCount: rotatedGrid.length,
+        rotation: rotation
       }
     };
   }
@@ -870,6 +946,7 @@ window.GasketConfiguratorNesting = (function () {
     packMixedSmart: packMixedSmart,
     usedStripFromPlaced: usedStripFromPlaced,
     totalMaterialArea: totalMaterialArea,
-    analyzePlate: analyzePlate
+    analyzePlate: analyzePlate,
+    piecesOverlap: piecesOverlap
   };
 })();
