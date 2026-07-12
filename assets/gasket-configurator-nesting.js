@@ -89,11 +89,14 @@ window.GasketConfiguratorNesting = (function () {
       materialMode: materialMode,
       wasteThresholdPct: Math.max(0, num(options.wasteThresholdPct, 30)),
       forceBottomRemainderWaste: materialMode === 'used_strip',
-      markBottomRemainder: options.markBottomRemainder !== false
+      markBottomRemainder: options.markBottomRemainder !== false,
+      strategyIndex: Math.max(0, Math.floor(num(options.strategyIndex, 0))) % 3,
+      fastThreshold: Math.max(80, Math.floor(num(options.fastThreshold, 220))),
+      candidateLimit: Math.max(80, Math.floor(num(options.candidateLimit, 420)))
     };
   }
 
-  function expandPieces(items) {
+  function expandPieces(items, strategyIndex, candidateLimit) {
     var pieces = [];
 
     items.forEach(function (it, itemIndex) {
@@ -137,9 +140,22 @@ window.GasketConfiguratorNesting = (function () {
       var aArea = a.width * a.height;
       var bArea = b.width * b.height;
 
-      if (bMax !== aMax) return bMax - aMax;
-      if (bArea !== aArea) return bArea - aArea;
+      if (strategyIndex === 1) {
+        if (bArea !== aArea) return bArea - aArea;
+        if (b.height !== a.height) return b.height - a.height;
+      } else if (strategyIndex === 2) {
+        if (b.width !== a.width) return b.width - a.width;
+        if (bArea !== aArea) return bArea - aArea;
+      } else {
+        if (bMax !== aMax) return bMax - aMax;
+        if (bArea !== aArea) return bArea - aArea;
+      }
+
       return a.itemIndex - b.itemIndex;
+    });
+
+    pieces.forEach(function (piece) {
+      piece.searchLimit = candidateLimit;
     });
 
     return pieces;
@@ -221,6 +237,7 @@ window.GasketConfiguratorNesting = (function () {
   function candidatePositions(plate, piece, W, H, edge, gap) {
     var out = [];
     var seen = {};
+    var limit = Math.max(80, num(piece.searchLimit, 420));
 
     var minX = edge + piece.halfW;
     var maxX = W - edge - piece.halfW;
@@ -315,8 +332,8 @@ window.GasketConfiguratorNesting = (function () {
     if (stepX <= 0) stepX = piece.width;
     if (stepY <= 0) stepY = piece.height;
 
-    for (var y1 = minY; y1 <= maxY + 0.001; y1 += stepY) {
-      for (var x1 = minX; x1 <= maxX + 0.001; x1 += stepX) {
+    for (var y1 = minY; y1 <= maxY + 0.001 && out.length < limit; y1 += stepY) {
+      for (var x1 = minX; x1 <= maxX + 0.001 && out.length < limit; x1 += stepX) {
         pushCandidate(out, seen, x1, y1, y1 * W + x1, false);
       }
     }
@@ -327,10 +344,10 @@ window.GasketConfiguratorNesting = (function () {
     if (staggerStepX > 0 && staggerStepY > 0) {
       var row = 0;
 
-      for (var y2 = minY; y2 <= maxY + 0.001; y2 += staggerStepY) {
+      for (var y2 = minY; y2 <= maxY + 0.001 && out.length < limit; y2 += staggerStepY) {
         var offset = row % 2 ? staggerStepX / 2 : 0;
 
-        for (var x2 = minX + offset; x2 <= maxX + 0.001; x2 += staggerStepX) {
+        for (var x2 = minX + offset; x2 <= maxX + 0.001 && out.length < limit; x2 += staggerStepX) {
           pushCandidate(out, seen, x2, y2, y2 * W + x2 - 1000, false);
         }
 
@@ -350,7 +367,7 @@ window.GasketConfiguratorNesting = (function () {
       return a.x - b.x;
     });
 
-    return out;
+    return out.slice(0, limit);
   }
 
   function boundsAfterPlace(plate, piece, x, y) {
@@ -623,15 +640,125 @@ window.GasketConfiguratorNesting = (function () {
     };
   }
 
+  function packMixedRowsFromPieces(pieces, W, H, edge, gap, options) {
+    var plates = [];
+    var notFit = [];
+
+    function variantsFor(piece) {
+      var variants = orientationVariants(piece);
+      if (options.strategyIndex === 1) variants.reverse();
+      return variants;
+    }
+
+    pieces.forEach(function (piece) {
+      if (!pieceFitsAnyOrientation(piece, W, H, edge)) {
+        notFit.push(piece);
+        return;
+      }
+
+      var placed = false;
+
+      for (var pi = 0; pi < plates.length && !placed; pi++) {
+        var plate = plates[pi];
+        var variants = variantsFor(piece);
+
+        for (var ri = 0; ri < plate.rows.length && !placed; ri++) {
+          var row = plate.rows[ri];
+
+          for (var vi = 0; vi < variants.length; vi++) {
+            var variant = variants[vi];
+            if (variant.height > row.height + 0.001) continue;
+            if (row.nextX + variant.width > W - edge + 0.001) continue;
+
+            plate.placed.push(clonePieceAt(
+              variant,
+              row.nextX + variant.halfW,
+              row.y + row.height / 2,
+              false
+            ));
+            row.nextX += variant.width + gap;
+            placed = true;
+            break;
+          }
+        }
+
+        if (placed) break;
+
+        var nextY = plate.rows.length
+          ? plate.rows[plate.rows.length - 1].y + plate.rows[plate.rows.length - 1].height + gap
+          : edge;
+
+        for (var nvi = 0; nvi < variants.length; nvi++) {
+          var nextVariant = variants[nvi];
+          if (nextY + nextVariant.height > H - edge + 0.001) continue;
+
+          plate.rows.push({ y: nextY, height: nextVariant.height, nextX: edge + nextVariant.width + gap });
+          plate.placed.push(clonePieceAt(
+            nextVariant,
+            edge + nextVariant.halfW,
+            nextY + nextVariant.halfH,
+            false
+          ));
+          placed = true;
+          break;
+        }
+      }
+
+      if (placed) return;
+
+      var newPlate = { placed: [], rows: [] };
+      var newVariants = variantsFor(piece);
+      var first = null;
+
+      for (var fvi = 0; fvi < newVariants.length; fvi++) {
+        if (pieceFitsPlate(newVariants[fvi], W, H, edge)) {
+          first = newVariants[fvi];
+          break;
+        }
+      }
+
+      if (!first) {
+        notFit.push(piece);
+        return;
+      }
+
+      newPlate.rows.push({ y: edge, height: first.height, nextX: edge + first.width + gap });
+      newPlate.placed.push(clonePieceAt(first, edge + first.halfW, edge + first.halfH, false));
+      plates.push(newPlate);
+    });
+
+    plates.forEach(function (plate) {
+      delete plate.rows;
+      plate.analysis = analyzePlate(plate.placed, W, H, edge, gap, options);
+      plate.wasteRects = plate.analysis.wasteRects;
+      plate.rowLines = plate.analysis.rowLines;
+    });
+
+    return {
+      mode: 'mixed',
+      strategy: 'fast-row-' + (options.strategyIndex + 1),
+      plates: plates,
+      notFit: notFit,
+      totalPieces: pieces.length,
+      usedPlateCount: plates.length,
+      fastMode: true
+    };
+  }
+
   function packMixedSmart(items, W, H, edge, gap, options) {
     W = num(W, 0);
     H = num(H, 0);
     edge = Math.max(0, num(edge, 0));
     gap = Math.max(0, num(gap, 0));
 
-    var pieces = expandPieces(items);
+    var opts = normalizeOptions(options);
+    var pieces = expandPieces(items, opts.strategyIndex, opts.candidateLimit);
     var plates = [];
     var notFit = [];
+
+    if (pieces.length > opts.fastThreshold) {
+      return packMixedRowsFromPieces(pieces, W, H, edge, gap, opts);
+    }
 
     pieces.forEach(function (piece) {
       if (!pieceFitsAnyOrientation(piece, W, H, edge)) {
@@ -678,14 +805,14 @@ window.GasketConfiguratorNesting = (function () {
     });
 
     plates.forEach(function (plate) {
-      plate.analysis = analyzePlate(plate.placed, W, H, edge, gap, options);
+      plate.analysis = analyzePlate(plate.placed, W, H, edge, gap, opts);
       plate.wasteRects = plate.analysis.wasteRects;
       plate.rowLines = plate.analysis.rowLines;
     });
 
     return {
       mode: 'mixed',
-      strategy: 'shape-aware-rotating-bottom-remainder-aware',
+      strategy: 'shape-aware-' + (opts.strategyIndex + 1),
       plates: plates,
       notFit: notFit,
       totalPieces: pieces.length,
@@ -764,6 +891,7 @@ window.GasketConfiguratorNesting = (function () {
       ? od / 2
       : clamp(num(item.outerRadius, 0), 0, Math.min(width, height) / 2);
 
+    var opts = normalizeOptions(options);
     var grid = makeGrid(width, height, W, H, edge, gap);
     var rotatedGrid = shape !== 'circle' && Math.abs(width - height) > 0.001
       ? makeGrid(height, width, W, H, edge, gap)
@@ -771,21 +899,20 @@ window.GasketConfiguratorNesting = (function () {
     var staggered = shape === 'circle'
       ? makeStaggered(width, height, W, H, edge, gap)
       : [];
-    var positions = grid;
-    var layoutName = 'Rasterpatroon';
-    var rotation = 0;
+    var patterns = [
+      { positions: grid, name: 'Rasterpatroon', rotation: 0 },
+      { positions: rotatedGrid, name: 'Gedraaid rasterpatroon', rotation: 90 },
+      { positions: staggered, name: 'Versprongen patroon', rotation: 0 }
+    ].filter(function (pattern) { return pattern.positions.length > 0; });
 
-    if (rotatedGrid.length > positions.length) {
-      positions = rotatedGrid;
-      layoutName = 'Gedraaid rasterpatroon';
-      rotation = 90;
-    }
+    patterns.sort(function (a, b) { return b.positions.length - a.positions.length; });
 
-    if (staggered.length > positions.length) {
-      positions = staggered;
-      layoutName = 'Versprongen patroon';
-      rotation = 0;
-    }
+    var selectedPattern = patterns.length
+      ? patterns[Math.min(opts.strategyIndex, patterns.length - 1)]
+      : { positions: [], name: 'Rasterpatroon', rotation: 0 };
+    var positions = selectedPattern.positions;
+    var layoutName = selectedPattern.name;
+    var rotation = selectedPattern.rotation;
 
     var placedWidth = rotation === 90 ? height : width;
     var placedHeight = rotation === 90 ? width : height;
@@ -850,7 +977,7 @@ window.GasketConfiguratorNesting = (function () {
         usedCount: usedCount
       };
 
-      plate.analysis = analyzePlate(plate.placed, W, H, edge, gap, options);
+      plate.analysis = analyzePlate(plate.placed, W, H, edge, gap, opts);
       plate.wasteRects = plate.analysis.wasteRects;
       plate.rowLines = plate.analysis.rowLines;
 
@@ -904,13 +1031,21 @@ window.GasketConfiguratorNesting = (function () {
     var plateAreaMm2 = Math.max(0, W * H);
 
     usedPlates.forEach(function (plate) {
-      var analysis = analyzePlate(plate.placed, W, H, edge, 0, opts);
+      var plateMaterialMode = plate.remainderDiscarded === true
+        ? 'used_strip'
+        : (plate.remainderDiscarded === false ? 'full_plate' : opts.materialMode);
+      var plateOptions = {
+        materialMode: plateMaterialMode,
+        wasteThresholdPct: opts.wasteThresholdPct,
+        markBottomRemainder: true
+      };
+      var analysis = analyzePlate(plate.placed, W, H, edge, 0, plateOptions);
 
       plate.analysis = analysis;
       plate.wasteRects = analysis.wasteRects;
       plate.rowLines = analysis.rowLines;
 
-      if (opts.materialMode === 'used_strip') {
+      if (plateMaterialMode === 'used_strip') {
         chargedAreaMm2 += analysis.strip.areaMm2;
         discardedAreaMm2 += Math.max(0, W * H - analysis.strip.areaMm2);
       } else {
