@@ -2037,7 +2037,7 @@
       if (els.nestNext) els.nestNext.disabled = currentPlateIndex >= plates.length - 1;
 
       if (els.nestStrategy) {
-        var strategyLabels = ['Compacte indeling', 'Oppervlakte eerst', 'Breedte eerst'];
+        var strategyLabels = ['Gemengde indeling', 'Oppervlakte eerst', 'Breedte eerst'];
         els.nestStrategy.textContent = data.packing.fastMode
           ? 'Snelle indeling voor grote aantallen'
           : (data.packing.layout && data.packing.layout.name
