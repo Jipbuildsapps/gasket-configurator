@@ -218,23 +218,6 @@ Place this in a Custom Liquid block:
 
       <button id="{{ gcfg_id }}-calc" type="button" class="gcfg__btn">Prijs berekenen</button>
       <div id="{{ gcfg_id }}-warn" class="gcfg__warn" aria-live="polite"></div>
-
-      <div id="{{ gcfg_id }}-calcBox" class="gcfg__calc" hidden>
-        <div class="gcfg__calcGrid">
-          <div class="gcfg__calcCard">
-            <h4>Resultaat</h4>
-            <div id="{{ gcfg_id }}-priceResult" class="gcfg__resultText"></div>
-          </div>
-
-          <div class="gcfg__calcCard">
-            <div class="gcfg__nestHead">
-              <h4>Plaatindeling</h4>
-              <div>Visuele nesting</div>
-            </div>
-            <svg id="{{ gcfg_id }}-nestSvg" class="gcfg__nestSvg" role="img" aria-label="Plaatindeling"></svg>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div class="gcfg__preview">
@@ -293,6 +276,23 @@ Place this in a Custom Liquid block:
         <div class="gcfg__downloadGrid">
           <button id="{{ gcfg_id }}-download-dxf" type="button" class="gcfg__btn gcfg__btn--dxf">Download DXF live pakking</button>
           <button id="{{ gcfg_id }}-download-svg" type="button" class="gcfg__btn gcfg__btn--secondary">Download SVG live pakking</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="{{ gcfg_id }}-calcBox" class="gcfg__calc" hidden>
+      <div class="gcfg__calcGrid">
+        <div class="gcfg__calcCard">
+          <h4>Prijsopbouw</h4>
+          <div id="{{ gcfg_id }}-priceResult" class="gcfg__resultText"></div>
+        </div>
+
+        <div class="gcfg__calcCard">
+          <div class="gcfg__nestHead">
+            <h4>Plaatindeling</h4>
+            <div>Werkelijk geplaatste pakkingen</div>
+          </div>
+          <svg id="{{ gcfg_id }}-nestSvg" class="gcfg__nestSvg" role="img" aria-label="Plaatindeling"></svg>
         </div>
       </div>
     </div>
