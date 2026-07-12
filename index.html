@@ -288,23 +288,6 @@
 
       <button id="gasket-configurator-preview-calc" type="button" class="gcfg__btn">Prijs berekenen</button>
       <div id="gasket-configurator-preview-warn" class="gcfg__warn" aria-live="polite"></div>
-
-      <div id="gasket-configurator-preview-calcBox" class="gcfg__calc" hidden>
-        <div class="gcfg__calcGrid">
-          <div class="gcfg__calcCard">
-            <h4>Resultaat</h4>
-            <div id="gasket-configurator-preview-priceResult" class="gcfg__resultText"></div>
-          </div>
-
-          <div class="gcfg__calcCard">
-            <div class="gcfg__nestHead">
-              <h4>Plaatindeling</h4>
-              <div>Visuele nesting</div>
-            </div>
-            <svg id="gasket-configurator-preview-nestSvg" class="gcfg__nestSvg" role="img" aria-label="Plaatindeling"></svg>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div class="gcfg__preview">
@@ -363,6 +346,23 @@
         <div class="gcfg__downloadGrid">
           <button id="gasket-configurator-preview-download-dxf" type="button" class="gcfg__btn gcfg__btn--dxf">Download DXF live pakking</button>
           <button id="gasket-configurator-preview-download-svg" type="button" class="gcfg__btn gcfg__btn--secondary">Download SVG live pakking</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="gasket-configurator-preview-calcBox" class="gcfg__calc" hidden>
+      <div class="gcfg__calcGrid">
+        <div class="gcfg__calcCard">
+          <h4>Prijsopbouw</h4>
+          <div id="gasket-configurator-preview-priceResult" class="gcfg__resultText"></div>
+        </div>
+
+        <div class="gcfg__calcCard">
+          <div class="gcfg__nestHead">
+            <h4>Plaatindeling</h4>
+            <div>Werkelijk geplaatste pakkingen</div>
+          </div>
+          <svg id="gasket-configurator-preview-nestSvg" class="gcfg__nestSvg" role="img" aria-label="Plaatindeling"></svg>
         </div>
       </div>
     </div>
