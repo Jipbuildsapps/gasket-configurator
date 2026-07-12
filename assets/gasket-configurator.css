@@ -578,9 +578,37 @@
 
 .gcfg .gcfg__patternPicker {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.gcfg .gcfg__patternHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gcfg .gcfg__textBtn {
+  flex: 0 0 auto;
+  padding: 4px 0;
+  border: 0;
+  color: var(--gcfg-accent-dark);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.gcfg .gcfg__textBtn:hover {
+  text-decoration: underline;
+}
+
+.gcfg .gcfg__textBtn:focus-visible {
+  outline: 3px solid rgba(17, 17, 17, 0.18);
+  outline-offset: 2px;
 }
 
 .gcfg .gcfg__shapeTile,
