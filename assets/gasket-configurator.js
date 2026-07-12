@@ -65,7 +65,6 @@
 
     var I18N = {
       choose_shape: 'Kies eerst een vorm. Daarna verschijnen de juiste maatvelden.',
-      choose_pattern: 'Kies hoe de pakking wordt uitgevoerd. Daarna verschijnen de maatvelden.',
       invalid: 'Vul geldige maten in. De binnenmaat moet kleiner zijn dan de buitenmaat en de pakkingbreedte moet overal passen.',
       no_items: 'Voeg minimaal één geldige pakkingregel toe.',
       no_fit: 'Eén of meer pakkingen passen niet op de ingestelde plaat.',
@@ -593,16 +592,22 @@
               '<span><small>Gekozen vorm</small><strong data-selected-shape-label></strong></span>' +
             '</div>' +
 
-            '<div class="gcfg__stageLabel"><span>2</span><strong>Kies de uitvoering</strong></div>' +
+            '<div class="gcfg__patternHeader">' +
+              '<div class="gcfg__stageLabel"><span>2</span><strong>Voeg eventueel gaten toe</strong></div>' +
+              '<button type="button" class="gcfg__textBtn" data-clear-pattern hidden>Gaten verwijderen</button>' +
+            '</div>' +
             '<div class="gcfg__patternPicker" role="radiogroup" aria-label="Gatenpatroon">' +
-              patternTileHtml('solid', 'Alleen buitenvorm', 'circle rect manhole', '<circle cx="32" cy="32" r="20" class="gcfg__iconFill"></circle>') +
-              patternTileHtml('center', 'Middengat', 'circle rect manhole', '<circle cx="32" cy="32" r="20"></circle><circle cx="32" cy="32" r="9"></circle>') +
+              patternTileHtml('center', 'Middengat', 'circle', '<circle cx="32" cy="32" r="21"></circle><circle cx="32" cy="32" r="9"></circle>') +
               patternTileHtml('bolt-circle', 'Midden + boutcirkel', 'circle', '<circle cx="32" cy="32" r="21"></circle><circle cx="32" cy="32" r="8"></circle><circle cx="32" cy="13" r="2.5" class="gcfg__iconDot"></circle><circle cx="51" cy="32" r="2.5" class="gcfg__iconDot"></circle><circle cx="32" cy="51" r="2.5" class="gcfg__iconDot"></circle><circle cx="13" cy="32" r="2.5" class="gcfg__iconDot"></circle>') +
-              patternTileHtml('corners', 'Midden + hoeken', 'rect manhole', '<rect x="10" y="13" width="44" height="38" rx="7"></rect><rect x="22" y="23" width="20" height="18" rx="4"></rect><circle cx="17" cy="20" r="2.5" class="gcfg__iconDot"></circle><circle cx="47" cy="20" r="2.5" class="gcfg__iconDot"></circle><circle cx="47" cy="44" r="2.5" class="gcfg__iconDot"></circle><circle cx="17" cy="44" r="2.5" class="gcfg__iconDot"></circle>') +
-              patternTileHtml('perimeter', 'Midden + rondom', 'rect manhole', '<rect x="8" y="15" width="48" height="34" rx="15"></rect><rect x="21" y="23" width="22" height="18" rx="8"></rect><circle cx="16" cy="19" r="2" class="gcfg__iconDot"></circle><circle cx="32" cy="17" r="2" class="gcfg__iconDot"></circle><circle cx="48" cy="19" r="2" class="gcfg__iconDot"></circle><circle cx="52" cy="32" r="2" class="gcfg__iconDot"></circle><circle cx="48" cy="45" r="2" class="gcfg__iconDot"></circle><circle cx="32" cy="47" r="2" class="gcfg__iconDot"></circle><circle cx="16" cy="45" r="2" class="gcfg__iconDot"></circle><circle cx="12" cy="32" r="2" class="gcfg__iconDot"></circle>') +
+              patternTileHtml('center', 'Middengat', 'rect', '<rect x="9" y="13" width="46" height="38" rx="5"></rect><rect x="21" y="23" width="22" height="18" rx="3"></rect>') +
+              patternTileHtml('corners', 'Midden + hoekgaten', 'rect', '<rect x="8" y="12" width="48" height="40" rx="5"></rect><rect x="21" y="23" width="22" height="18" rx="3"></rect><circle cx="15" cy="19" r="2.5" class="gcfg__iconDot"></circle><circle cx="49" cy="19" r="2.5" class="gcfg__iconDot"></circle><circle cx="49" cy="45" r="2.5" class="gcfg__iconDot"></circle><circle cx="15" cy="45" r="2.5" class="gcfg__iconDot"></circle>') +
+              patternTileHtml('perimeter', 'Midden + rondom', 'rect', '<rect x="7" y="11" width="50" height="42" rx="5"></rect><rect x="21" y="23" width="22" height="18" rx="3"></rect><circle cx="14" cy="17" r="2" class="gcfg__iconDot"></circle><circle cx="32" cy="16" r="2" class="gcfg__iconDot"></circle><circle cx="50" cy="17" r="2" class="gcfg__iconDot"></circle><circle cx="51" cy="32" r="2" class="gcfg__iconDot"></circle><circle cx="50" cy="47" r="2" class="gcfg__iconDot"></circle><circle cx="32" cy="48" r="2" class="gcfg__iconDot"></circle><circle cx="14" cy="47" r="2" class="gcfg__iconDot"></circle><circle cx="13" cy="32" r="2" class="gcfg__iconDot"></circle>') +
+              patternTileHtml('center', 'Middengat', 'manhole', '<path d="M22 14h20a18 18 0 0 1 0 36H22a18 18 0 0 1 0-36Z"></path><path d="M25 24h14a8 8 0 0 1 0 16H25a8 8 0 0 1 0-16Z"></path>') +
+              patternTileHtml('corners', 'Midden + 4 gaten', 'manhole', '<path d="M22 13h20a19 19 0 0 1 0 38H22a19 19 0 0 1 0-38Z"></path><path d="M25 24h14a8 8 0 0 1 0 16H25a8 8 0 0 1 0-16Z"></path><circle cx="17" cy="22" r="2.5" class="gcfg__iconDot"></circle><circle cx="47" cy="22" r="2.5" class="gcfg__iconDot"></circle><circle cx="47" cy="42" r="2.5" class="gcfg__iconDot"></circle><circle cx="17" cy="42" r="2.5" class="gcfg__iconDot"></circle>') +
+              patternTileHtml('perimeter', 'Midden + rondom', 'manhole', '<path d="M21 12h22a20 20 0 0 1 0 40H21a20 20 0 0 1 0-40Z"></path><path d="M25 24h14a8 8 0 0 1 0 16H25a8 8 0 0 1 0-16Z"></path><circle cx="14" cy="20" r="2" class="gcfg__iconDot"></circle><circle cx="26" cy="16" r="2" class="gcfg__iconDot"></circle><circle cx="38" cy="16" r="2" class="gcfg__iconDot"></circle><circle cx="50" cy="20" r="2" class="gcfg__iconDot"></circle><circle cx="54" cy="32" r="2" class="gcfg__iconDot"></circle><circle cx="50" cy="44" r="2" class="gcfg__iconDot"></circle><circle cx="38" cy="48" r="2" class="gcfg__iconDot"></circle><circle cx="26" cy="48" r="2" class="gcfg__iconDot"></circle><circle cx="14" cy="44" r="2" class="gcfg__iconDot"></circle><circle cx="10" cy="32" r="2" class="gcfg__iconDot"></circle>') +
             '</div>' +
 
-            '<div class="gcfg__shapePrompt" data-pattern-prompt>Kies een uitvoering om de maatvelden te openen.</div>' +
+            '<div class="gcfg__shapePrompt" data-pattern-prompt>Geen gaten geselecteerd; deze vorm wordt massief uitgevoerd.</div>' +
 
             '<div class="gcfg__measurements" data-requires-pattern>' +
               '<div class="gcfg__stageLabel"><span>3</span><strong>Vul de maten in</strong></div>' +
@@ -761,16 +766,20 @@
       });
 
       Array.prototype.slice.call(item.querySelectorAll('[data-requires-pattern]')).forEach(function (el) {
-        el.hidden = !shape || !pattern;
+        el.hidden = !shape;
       });
 
       Array.prototype.slice.call(item.querySelectorAll('[data-pattern-prompt]')).forEach(function (el) {
         el.hidden = !!pattern;
       });
 
+      Array.prototype.slice.call(item.querySelectorAll('[data-clear-pattern]')).forEach(function (el) {
+        el.hidden = !pattern;
+      });
+
       var manholeDerived = item.querySelector('[data-manhole-derived]');
 
-      if (manholeDerived && shape === 'manhole' && pattern) {
+      if (manholeDerived && shape === 'manhole') {
         var manholeDia = val(f.manholeDia);
         var straightLength = val(f.straightLength);
         var ringWidth = val(f.ringWidth);
@@ -779,7 +788,7 @@
         var innerH = manholeDia - ringWidth * 2;
         var innerW = innerH + straightLength;
 
-        if (pattern === 'solid' && manholeDia > 0 && straightLength > 0) {
+        if (!pattern && manholeDia > 0 && straightLength > 0) {
           manholeDerived.textContent = 'Totale buitenmaat: ' + fmt(outerW, 1) + ' x ' + fmt(outerH, 1) + ' mm.';
           manholeDerived.classList.remove('is-invalid');
         } else if (manholeDia > 0 && straightLength > 0 && ringWidth > 0 && innerH > 0) {
@@ -964,9 +973,9 @@
     function readItem(item, index) {
       var f = itemFields(item);
       var shape = f.shape && f.shape.value ? f.shape.value : '';
-      var holePattern = f.holePattern && f.holePattern.value ? f.holePattern.value : '';
+      var holePattern = f.holePattern && f.holePattern.value ? f.holePattern.value : 'solid';
 
-      if (!shape || !holePattern) return null;
+      if (!shape) return null;
 
       var hasCenterHole = patternHasCenterHole(holePattern);
 
@@ -1243,9 +1252,7 @@
         btn.addEventListener('click', function () {
           var f = itemFields(node);
           var nextShape = btn.getAttribute('data-shape-choice') || 'circle';
-          if (f.holePattern && (!f.shape || f.shape.value !== nextShape || !f.holePattern.value)) {
-            f.holePattern.value = 'center';
-          }
+          if (f.holePattern && (!f.shape || f.shape.value !== nextShape)) f.holePattern.value = '';
           if (f.shape) f.shape.value = nextShape;
           activeItem = node;
           syncShapeUI(node);
@@ -1258,7 +1265,8 @@
       node.querySelectorAll('[data-pattern-choice]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           var f = itemFields(node);
-          if (f.holePattern) f.holePattern.value = btn.getAttribute('data-pattern-choice') || 'center';
+          var nextPattern = btn.getAttribute('data-pattern-choice') || 'center';
+          if (f.holePattern) f.holePattern.value = f.holePattern.value === nextPattern ? '' : nextPattern;
           activeItem = node;
           syncShapeUI(node);
           updateItemTitles();
@@ -1266,6 +1274,19 @@
           scheduleAutoCalculation();
         });
       });
+
+      var clearPatternBtn = node.querySelector('[data-clear-pattern]');
+      if (clearPatternBtn) {
+        clearPatternBtn.addEventListener('click', function () {
+          var f = itemFields(node);
+          if (f.holePattern) f.holePattern.value = '';
+          activeItem = node;
+          syncShapeUI(node);
+          updateItemTitles();
+          scheduleRender();
+          scheduleAutoCalculation();
+        });
+      }
 
       var changeShapeBtn = node.querySelector('[data-change-shape]');
       if (changeShapeBtn) {
@@ -1358,10 +1379,9 @@
 
       if (!it) {
         var shapeField = activeItem.querySelector('[data-field="shape"]');
-        var patternField = activeItem.querySelector('[data-field="holePattern"]');
         warn(els.svgWarn, shapeField && !shapeField.value
           ? I18N.choose_shape
-          : (patternField && !patternField.value ? I18N.choose_pattern : I18N.invalid));
+          : I18N.invalid);
         return;
       }
 
@@ -1834,20 +1854,10 @@
         var shapeField = item.querySelector('[data-field="shape"]');
         return shapeField && !shapeField.value;
       });
-      var hasUnchosenPattern = itemNodes.some(function (item) {
-        var patternField = item.querySelector('[data-field="holePattern"]');
-        return patternField && !patternField.value;
-      });
 
       if (hasUnchosenShape) {
         hideCalculatedResult();
         if (!options.automatic) warn(els.warnBox, I18N.choose_shape);
-        return;
-      }
-
-      if (hasUnchosenPattern) {
-        hideCalculatedResult();
-        if (!options.automatic) warn(els.warnBox, I18N.choose_pattern);
         return;
       }
 
