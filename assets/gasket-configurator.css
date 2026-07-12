@@ -191,6 +191,34 @@
   min-height: 16px;
 }
 
+.gcfg .gcfg__busy {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid rgba(23, 109, 91, 0.28);
+  border-radius: 7px;
+  color: var(--gcfg-accent-dark);
+  background: rgba(23, 109, 91, 0.06);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.gcfg .gcfg__spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(23, 109, 91, 0.22);
+  border-top-color: var(--gcfg-accent);
+  border-radius: 50%;
+  animation: gcfg-spin 700ms linear infinite;
+}
+
+@keyframes gcfg-spin {
+  to { transform: rotate(360deg); }
+}
+
 .gcfg .gcfg__switchRow {
   position: relative;
   display: flex;
@@ -348,6 +376,8 @@
 .gcfg .gcfg__btn:focus-visible,
 .gcfg .gcfg__miniBtn:focus-visible,
 .gcfg .gcfg__shapeTile:focus-visible,
+.gcfg .gcfg__patternTile:focus-visible,
+.gcfg .gcfg__iconBtn:focus-visible,
 .gcfg .gcfg__stepperBtn:focus-visible {
   outline: 3px solid rgba(17, 17, 17, 0.18);
   outline-offset: 2px;
@@ -374,7 +404,8 @@
 }
 
 .gcfg .gcfg__miniBtn:hover,
-.gcfg .gcfg__shapeTile:hover {
+.gcfg .gcfg__shapeTile:hover,
+.gcfg .gcfg__patternTile:hover {
   border-color: rgba(23, 109, 91, 0.54);
   background: rgba(23, 109, 91, 0.05);
 }
@@ -436,6 +467,80 @@
   margin: 12px 0;
 }
 
+.gcfg .gcfg__stageLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+  color: var(--gcfg-ink);
+  font-size: 13px;
+}
+
+.gcfg .gcfg__stageLabel > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--gcfg-line-strong);
+  border-radius: 50%;
+  color: var(--gcfg-accent-dark);
+  background: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.gcfg .gcfg__selectedShape {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 9px 10px;
+  border: 1px solid var(--gcfg-line);
+  border-radius: 7px;
+  background: var(--gcfg-surface-soft);
+}
+
+.gcfg .gcfg__selectedShape > span {
+  display: grid;
+  gap: 1px;
+}
+
+.gcfg .gcfg__selectedShape small {
+  color: var(--gcfg-muted);
+  font-size: 11px;
+}
+
+.gcfg .gcfg__selectedShape strong {
+  font-size: 14px;
+}
+
+.gcfg .gcfg__iconBtn {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--gcfg-line-strong);
+  border-radius: 6px;
+  color: var(--gcfg-ink);
+  background: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gcfg .gcfg__iconBtn:hover:not(:disabled) {
+  border-color: var(--gcfg-accent);
+  color: var(--gcfg-accent-dark);
+  background: rgba(23, 109, 91, 0.06);
+}
+
+.gcfg .gcfg__iconBtn:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
 .gcfg .gcfg__shapePrompt {
   margin: 8px 0 12px;
   padding: 10px 12px;
@@ -471,31 +576,55 @@
   margin-bottom: 12px;
 }
 
-.gcfg .gcfg__shapeTile {
+.gcfg .gcfg__patternPicker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.gcfg .gcfg__shapeTile,
+.gcfg .gcfg__patternTile {
   appearance: none;
   border: 1px solid rgba(0, 0, 0, 0.16);
   background: #fff;
   color: inherit;
   border-radius: 8px;
-  min-height: 92px;
+  min-height: 104px;
   padding: 10px 8px;
   display: grid;
   place-items: center;
   gap: 6px;
   cursor: pointer;
   font: inherit;
-  font-weight: 650;
+  font-weight: 700;
+  text-align: center;
 }
 
-.gcfg .gcfg__shapeTile svg {
-  width: 44px;
-  height: 44px;
+.gcfg .gcfg__shapeTile svg,
+.gcfg .gcfg__patternTile svg {
+  width: 50px;
+  height: 50px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 3;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.gcfg .gcfg__shapeTile.is-selected {
+.gcfg .gcfg__shapeTile .gcfg__iconFill,
+.gcfg .gcfg__patternTile .gcfg__iconFill {
+  fill: rgba(23, 109, 91, 0.14);
+}
+
+.gcfg .gcfg__shapeTile .gcfg__iconDot,
+.gcfg .gcfg__patternTile .gcfg__iconDot {
+  fill: currentColor;
+  stroke: none;
+}
+
+.gcfg .gcfg__shapeTile.is-selected,
+.gcfg .gcfg__patternTile.is-selected {
   border-color: var(--gcfg-accent);
   color: var(--gcfg-accent-dark);
   background: rgba(23, 109, 91, 0.08);
@@ -821,7 +950,7 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: baseline;
+  align-items: center;
   margin-bottom: 10px;
 }
 
@@ -831,11 +960,46 @@
   color: rgba(0, 0, 0, 0.55);
 }
 
+.gcfg .gcfg__nestHead h4 {
+  margin-bottom: 3px;
+}
+
+.gcfg .gcfg__nestRetry {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.gcfg .gcfg__nestRetry > span {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gcfg .gcfg__plateNav {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gcfg .gcfg__plateNav > strong {
+  font-size: 13px;
+  text-align: center;
+}
+
 .gcfg .gcfg__nestSvg {
   overflow: hidden;
   border: 1px solid var(--gcfg-line);
   border-radius: 6px;
   background: #fbfcfb;
+  touch-action: pan-y;
+}
+
+.gcfg .gcfg__plateRemainder {
+  margin-top: 10px;
 }
 
 @media (max-width: 620px) {
@@ -852,18 +1016,25 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .gcfg .gcfg__shapeTile {
+  .gcfg .gcfg__shapeTile,
+  .gcfg .gcfg__patternTile {
     min-height: 82px;
     padding-inline: 5px;
     font-size: 12px;
   }
 
-  .gcfg .gcfg__shapeTile svg {
+  .gcfg .gcfg__shapeTile svg,
+  .gcfg .gcfg__patternTile svg {
     width: 36px;
     height: 36px;
   }
 
   .gcfg .gcfg__lineMeta {
     grid-template-columns: 1fr;
+  }
+
+  .gcfg .gcfg__nestHead {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
