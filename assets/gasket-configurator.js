@@ -944,8 +944,24 @@
       }
 
       var points = roundedRectPoints(pathW, pathH, pathRadius, 12);
+      var halfPathW = pathW / 2;
+      var halfPathH = pathH / 2;
+
+      if (pathRadius > 0) {
+        points.unshift({ x: 0, y: -halfPathH });
+      } else {
+        points = [
+          { x: 0, y: -halfPathH },
+          { x: halfPathW, y: -halfPathH },
+          { x: halfPathW, y: halfPathH },
+          { x: -halfPathW, y: halfPathH },
+          { x: -halfPathW, y: -halfPathH }
+        ];
+      }
+
       var requested = Math.max(1, it.requestedHoleCount);
-      var spacing = it.holeSpacing > 0 ? it.holeSpacing : roundedRectPerimeter(pathW, pathH, pathRadius) / requested;
+      var perimeter = roundedRectPerimeter(pathW, pathH, pathRadius);
+      var spacing = it.holeSpacing > 0 ? it.holeSpacing : perimeter / requested;
 
       for (var h = 0; h < requested; h++) {
         var point = pointAlongClosedPath(points, it.startOffset + h * spacing);
@@ -1687,7 +1703,7 @@
         */
         wasteThresholdPct: remainderMode === 'discard' ? 30 : -1,
         strategyIndex: nestingAttempt,
-        fastThreshold: 160,
+        fastThreshold: 100,
         candidateLimit: 260
       };
 
@@ -2013,7 +2029,9 @@
       }
 
       if (els.nestIndicator) {
-        els.nestIndicator.textContent = 'Plaat ' + (currentPlateIndex + 1) + ' van ' + plates.length;
+        var platePieceCount = (plates[currentPlateIndex].placed || []).length;
+        els.nestIndicator.textContent = 'Plaat ' + (currentPlateIndex + 1) + ' van ' + plates.length +
+          ' \u2022 ' + platePieceCount + (platePieceCount === 1 ? ' pakking' : ' pakkingen');
       }
 
       if (els.nestPrev) els.nestPrev.disabled = currentPlateIndex <= 0;
