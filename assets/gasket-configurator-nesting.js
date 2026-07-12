@@ -237,7 +237,6 @@ window.GasketConfiguratorNesting = (function () {
   function candidatePositions(plate, piece, W, H, edge, gap) {
     var out = [];
     var seen = {};
-    var limit = Math.max(80, num(piece.searchLimit, 420));
 
     var minX = edge + piece.halfW;
     var maxX = W - edge - piece.halfW;
@@ -332,8 +331,8 @@ window.GasketConfiguratorNesting = (function () {
     if (stepX <= 0) stepX = piece.width;
     if (stepY <= 0) stepY = piece.height;
 
-    for (var y1 = minY; y1 <= maxY + 0.001 && out.length < limit; y1 += stepY) {
-      for (var x1 = minX; x1 <= maxX + 0.001 && out.length < limit; x1 += stepX) {
+    for (var y1 = minY; y1 <= maxY + 0.001; y1 += stepY) {
+      for (var x1 = minX; x1 <= maxX + 0.001; x1 += stepX) {
         pushCandidate(out, seen, x1, y1, y1 * W + x1, false);
       }
     }
@@ -344,10 +343,10 @@ window.GasketConfiguratorNesting = (function () {
     if (staggerStepX > 0 && staggerStepY > 0) {
       var row = 0;
 
-      for (var y2 = minY; y2 <= maxY + 0.001 && out.length < limit; y2 += staggerStepY) {
+      for (var y2 = minY; y2 <= maxY + 0.001; y2 += staggerStepY) {
         var offset = row % 2 ? staggerStepX / 2 : 0;
 
-        for (var x2 = minX + offset; x2 <= maxX + 0.001 && out.length < limit; x2 += staggerStepX) {
+        for (var x2 = minX + offset; x2 <= maxX + 0.001; x2 += staggerStepX) {
           pushCandidate(out, seen, x2, y2, y2 * W + x2 - 1000, false);
         }
 
@@ -367,7 +366,7 @@ window.GasketConfiguratorNesting = (function () {
       return a.x - b.x;
     });
 
-    return out.slice(0, limit);
+    return out;
   }
 
   function boundsAfterPlace(plate, piece, x, y) {
@@ -397,11 +396,14 @@ window.GasketConfiguratorNesting = (function () {
     for (var vi = 0; vi < variants.length; vi++) {
       var variant = variants[vi];
       var candidates = candidatePositions(plate, variant, W, H, edge, gap);
+      var validCandidates = 0;
 
       for (var i = 0; i < candidates.length; i++) {
         var c = candidates[i];
 
         if (!canPlaceAt(plate, variant, c.x, c.y, W, H, edge, gap)) continue;
+
+        validCandidates++;
 
         var inHole = !!findHostHole(plate, variant, c.x, c.y, gap);
         var b = boundsAfterPlace(plate, variant, c.x, c.y);
@@ -424,6 +426,8 @@ window.GasketConfiguratorNesting = (function () {
             rotation: variant.rotation || 0
           };
         }
+
+        if (validCandidates >= Math.max(80, num(piece.searchLimit, 420))) break;
       }
     }
 
