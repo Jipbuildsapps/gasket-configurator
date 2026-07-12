@@ -157,11 +157,6 @@
       idLine: els.previewSvg.querySelector('.id-line'),
       idText: els.previewSvg.querySelector('.id-text'),
 
-      holeExtL: els.previewSvg.querySelector('.hole-ext-l'),
-      holeExtR: els.previewSvg.querySelector('.hole-ext-r'),
-      holeLine: els.previewSvg.querySelector('.hole-line'),
-      holeText: els.previewSvg.querySelector('.hole-text'),
-
       pcdExtL: els.previewSvg.querySelector('.pcd-ext-l'),
       pcdExtR: els.previewSvg.querySelector('.pcd-ext-r'),
       pcdLine: els.previewSvg.querySelector('.pcd-line'),
@@ -1387,17 +1382,13 @@
         drawingEls.idLine,
         drawingEls.pcdExtL,
         drawingEls.pcdExtR,
-        drawingEls.pcdLine,
-        drawingEls.holeExtL,
-        drawingEls.holeExtR,
-        drawingEls.holeLine
+        drawingEls.pcdLine
       ].forEach(hideLine);
 
       [
         drawingEls.odText,
         drawingEls.idText,
-        drawingEls.pcdText,
-        drawingEls.holeText
+        drawingEls.pcdText
       ].forEach(hideText);
 
       if (drawingEls.thkGroup) drawingEls.thkGroup.style.display = 'none';
@@ -1452,18 +1443,15 @@
       }
 
       var outerDimensionLabel = it.shape === 'circle'
-        ? 'Buiten Ø ' + fmt(it.outerW, 1) + ' mm'
-        : 'Buiten ' + fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1) + ' mm';
+        ? 'Ø ' + fmt(it.outerW, 1) + ' mm'
+        : fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1) + ' mm';
       var innerDimensionLabel = it.innerShape === 'circle'
-        ? 'Binnen Ø ' + fmt(it.innerW, 1) + ' mm'
-        : 'Binnen ' + fmt(it.innerW, 1) + ' x ' + fmt(it.innerH, 1) + ' mm';
-      var outerTop = cy - outerH / 2;
-      var outerBottom = cy + outerH / 2;
-      var outerDimensionY = Math.max(46, outerTop - 42);
+        ? 'Ø ' + fmt(it.innerW, 1) + ' mm'
+        : fmt(it.innerW, 1) + ' x ' + fmt(it.innerH, 1) + ' mm';
 
-      drawDiameterDimension(drawingEls.odExtL, drawingEls.odExtR, drawingEls.odLine, drawingEls.odText, cx - outerW / 2, cx + outerW / 2, outerTop, outerDimensionY, outerDimensionLabel, cx, -10);
+      drawDiameterDimension(drawingEls.odExtL, drawingEls.odExtR, drawingEls.odLine, drawingEls.odText, cx - outerW / 2, cx + outerW / 2, cy, 62, outerDimensionLabel, cx, -10);
       if (it.hasCenterHole) {
-        drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy + innerH / 2, outerBottom + 42, innerDimensionLabel, cx, 16);
+        drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy, 96, innerDimensionLabel, cx, -10);
       }
 
       drawBoltPattern({
@@ -1530,22 +1518,6 @@
         drawingEls.holesG.appendChild(circle);
       });
 
-      var first = centers[0];
-      var yDimHole = cfg.cy + cfg.rOuter + 92;
-      drawDiameterDimension(
-        drawingEls.holeExtL,
-        drawingEls.holeExtR,
-        drawingEls.holeLine,
-        drawingEls.holeText,
-        cfg.cx + first.x * cfg.scale - rHole,
-        cfg.cx + first.x * cfg.scale + rHole,
-        cfg.cy + first.y * cfg.scale,
-        yDimHole,
-        centers.length + ' × Ø ' + fmt(cfg.holeDia, 1) + ' mm',
-        cfg.cx,
-        16
-      );
-
       if (cfg.showPcd && cfg.pcd > 0) {
         var rPcd = (cfg.pcd / 2) * cfg.scale;
 
@@ -1556,7 +1528,7 @@
           setA(drawingEls.pcdCircle, 'r', rPcd);
         }
 
-        var yDimPCD = yDimHole + 48;
+        var yDimPCD = cfg.cy + cfg.rOuter + 72;
         drawDiameterDimension(drawingEls.pcdExtL, drawingEls.pcdExtR, drawingEls.pcdLine, drawingEls.pcdText, cfg.cx - rPcd, cfg.cx + rPcd, cfg.cy, yDimPCD, 'PCD ' + fmt(cfg.pcd, 1) + ' mm', cfg.cx, 16);
       }
     }
