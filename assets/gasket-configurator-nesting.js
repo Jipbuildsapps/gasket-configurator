@@ -951,6 +951,30 @@ window.GasketConfiguratorNesting = (function () {
       { positions: staggered, name: 'Versprongen patroon', rotation: 0 }
     ].filter(function (pattern) { return pattern.positions.length > 0; });
 
+    if (shape !== 'circle' && Math.abs(width - height) > 0.001 && qty > 0) {
+      var probeItem = {};
+      Object.keys(item).forEach(function (key) { probeItem[key] = item[key]; });
+      probeItem.qty = qty;
+
+      var mixedProbe = packMixedSmart([probeItem], W, H, edge, gap, opts);
+      var mixedPlate = mixedProbe.plates && mixedProbe.plates.length
+        ? mixedProbe.plates[0]
+        : null;
+      var mixedPositions = mixedPlate
+        ? mixedPlate.placed.map(function (piece) {
+          return { x: piece.x, y: piece.y, rotation: piece.rotation || 0 };
+        })
+        : [];
+
+      if (mixedPositions.length) {
+        patterns.push({
+          positions: mixedPositions,
+          name: 'Gemengd gedraaid patroon',
+          rotation: 'mixed'
+        });
+      }
+    }
+
     patterns.sort(function (a, b) { return b.positions.length - a.positions.length; });
 
     var selectedPattern = patterns.length
@@ -959,9 +983,6 @@ window.GasketConfiguratorNesting = (function () {
     var positions = selectedPattern.positions;
     var layoutName = selectedPattern.name;
     var rotation = selectedPattern.rotation;
-
-    var placedWidth = rotation === 90 ? height : width;
-    var placedHeight = rotation === 90 ? width : height;
 
     var perPlate = positions.length;
 
@@ -993,6 +1014,9 @@ window.GasketConfiguratorNesting = (function () {
 
       for (var i = 0; i < usedCount; i++) {
         var pos = positions[i];
+        var pieceRotation = rotation === 'mixed' ? (pos.rotation || 0) : rotation;
+        var placedWidth = pieceRotation === 90 ? height : width;
+        var placedHeight = pieceRotation === 90 ? width : height;
 
         placed.push({
           item: item,
@@ -1005,7 +1029,7 @@ window.GasketConfiguratorNesting = (function () {
           halfW: placedWidth / 2,
           halfH: placedHeight / 2,
           cornerRadius: cornerRadius,
-          rotation: rotation,
+          rotation: pieceRotation,
           id: num(item.id, 0),
           innerR: (item.shape || 'circle') === 'circle' ? num(item.id, 0) / 2 : 0,
           pcd: num(item.pcd, 0),
