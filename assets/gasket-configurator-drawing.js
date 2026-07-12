@@ -49,7 +49,14 @@ window.GasketConfiguratorDrawing = (function () {
     var innerShape = item.innerShape || 'circle';
     var innerW = (item.innerW || item.innerDia || item.id || 0) * scale;
     var innerH = (item.innerH || item.innerDia || item.id || 0) * scale;
+    var isRotated = Number(p.rotation || 0) % 180 !== 0;
     var html = '';
+
+    if (isRotated && shape !== 'circle') {
+      var originalInnerW = innerW;
+      innerW = innerH;
+      innerH = originalInnerW;
+    }
 
     if (shape === 'circle') {
       html +=
@@ -438,8 +445,21 @@ window.GasketConfiguratorDrawing = (function () {
     if (!plates.length) return;
 
     var svgWidth = 1000;
-    var height = 880;
-    var blockHeight = 800;
+    var blockHeight = 720;
+    var maxVisiblePlates = 4;
+    var plateEntries = plates.map(function (plate, index) {
+      return { plate: plate, number: index + 1 };
+    });
+
+    if (plateEntries.length > maxVisiblePlates) {
+      plateEntries = plateEntries.slice(0, maxVisiblePlates - 1).concat([
+        plateEntries[plateEntries.length - 1]
+      ]);
+    }
+
+    var omittedCount = Math.max(0, plates.length - plateEntries.length);
+    var omittedHeight = omittedCount > 0 ? 42 : 0;
+    var height = plateEntries.length * blockHeight + omittedHeight + 72;
 
     nestSvg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + height);
 
@@ -450,26 +470,31 @@ window.GasketConfiguratorDrawing = (function () {
       height +
       '" fill="#fff" />';
 
-    var lastPlate = plates[plates.length - 1];
-    var showGhosts = packing.mode === 'single' && items.length === 1;
-    var title = plates.length > 1
-      ? 'Laatste/restplaat ' + plates.length + ' van ' + plates.length
-      : 'Plaatindeling';
+    plateEntries.forEach(function (entry, index) {
+      html += drawPlateBlock(
+        svgWidth,
+        blockHeight,
+        W,
+        H,
+        entry.plate,
+        plates.length > 1 ? 'Plaat ' + entry.number + ' van ' + plates.length : 'Plaatindeling',
+        index * blockHeight,
+        false,
+        edge,
+        nestingApi
+      );
+    });
 
-    html += drawPlateBlock(
-      svgWidth,
-      blockHeight,
-      W,
-      H,
-      lastPlate,
-      title,
-      0,
-      showGhosts,
-      edge,
-      nestingApi
-    );
+    if (omittedCount > 0) {
+      html +=
+        '<text x="55" y="' +
+        (plateEntries.length * blockHeight + 25) +
+        '" font-size="15" font-weight="700" fill="rgba(0,0,0,.62)">' +
+        omittedCount +
+        ' tussenliggende platen niet apart getoond</text>';
+    }
 
-    html += drawLegend(items, height - 34, showGhosts);
+    html += drawLegend(items, height - 30, false);
 
     nestSvg.innerHTML = html;
   }
