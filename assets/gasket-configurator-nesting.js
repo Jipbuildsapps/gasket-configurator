@@ -96,6 +96,44 @@ window.GasketConfiguratorNesting = (function () {
     };
   }
 
+  function interleavePieceTypes(pieces) {
+    var groups = [];
+    var groupByItem = {};
+
+    pieces.forEach(function (piece) {
+      var key = String(piece.itemIndex);
+      var group = groupByItem[key];
+
+      if (!group) {
+        group = { pieces: [], cursor: 0 };
+        groupByItem[key] = group;
+        groups.push(group);
+      }
+
+      group.pieces.push(piece);
+    });
+
+    if (groups.length < 2) return pieces;
+
+    var mixed = [];
+    var remaining = pieces.length;
+    var cursor = 0;
+
+    while (remaining > 0) {
+      var group = groups[cursor % groups.length];
+
+      if (group.cursor < group.pieces.length) {
+        mixed.push(group.pieces[group.cursor]);
+        group.cursor++;
+        remaining--;
+      }
+
+      cursor++;
+    }
+
+    return mixed;
+  }
+
   function expandPieces(items, strategyIndex, candidateLimit) {
     var pieces = [];
 
@@ -153,6 +191,10 @@ window.GasketConfiguratorNesting = (function () {
 
       return a.itemIndex - b.itemIndex;
     });
+
+    if (strategyIndex === 0) {
+      pieces = interleavePieceTypes(pieces);
+    }
 
     pieces.forEach(function (piece) {
       piece.searchLimit = candidateLimit;
