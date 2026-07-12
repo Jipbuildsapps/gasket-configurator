@@ -94,6 +94,7 @@
 
   <main>
 <link rel="stylesheet" href="./assets/gasket-configurator.css">
+<script src="./assets/gasket-configurator-core.js" defer></script>
 <script src="./assets/gasket-configurator-nesting.js" defer></script>
 <script src="./assets/gasket-configurator-drawing.js" defer></script>
 <script src="./assets/gasket-configurator.js" defer></script>
@@ -267,8 +268,8 @@
 
           <div class="gcfg__row gcfg__row--2">
             <div>
-              <label class="gcfg__label" for="gasket-configurator-preview-marginPct">Marge/opslag %</label>
-              <input id="gasket-configurator-preview-marginPct" class="gcfg__input" type="number" min="0" step="0.1" value="150">
+              <label class="gcfg__label" for="gasket-configurator-preview-marginPct">Brutomarge %</label>
+              <input id="gasket-configurator-preview-marginPct" class="gcfg__input" type="number" min="0" max="99.9" step="0.1" value="60">
             </div>
             <div>
               <label class="gcfg__label" for="gasket-configurator-preview-minOrder">Minimum orderbedrag €</label>
