@@ -65,7 +65,7 @@
 
     var I18N = {
       choose_shape: 'Kies eerst een vorm. Daarna verschijnen de juiste maatvelden.',
-      invalid: 'Vul geldige maten in. De binnenmaat moet kleiner zijn dan de buitenmaat.',
+      invalid: 'Vul geldige maten in. De binnenmaat moet kleiner zijn dan de buitenmaat en de pakkingbreedte moet overal passen.',
       no_items: 'Voeg minimaal één geldige pakkingregel toe.',
       no_fit: 'Eén of meer pakkingen passen niet op de ingestelde plaat.',
       bolt_partial: 'Om het boutpatroon te tonen, vul PCD + gat Ø + aantal gaten in.',
@@ -364,7 +364,8 @@
         return 'Rechthoek ' + fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1);
       }
       if (it.shape === 'manhole') {
-        return 'Mangat ' + fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1);
+        return 'Mangat ' + fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1) +
+          ' • pakkingbreedte ' + fmt(it.ringWidth, 1) + ' mm';
       }
 
       return 'Rond OD ' + fmt(it.od, 1) + ' / ID ' + fmt(it.id, 1);
@@ -467,6 +468,89 @@
       );
     }
 
+    function stepDecimals(step) {
+      var text = String(step || '1');
+      var dot = text.indexOf('.');
+
+      return dot === -1 ? 0 : text.length - dot - 1;
+    }
+
+    function adjustNumericInput(input, direction) {
+      var step = extractNumber(input.getAttribute('step'));
+      var min = extractNumber(input.getAttribute('min'));
+      var max = extractNumber(input.getAttribute('max'));
+      var current = extractNumber(input.value);
+
+      if (!(step > 0)) {
+        step = input.getAttribute('inputmode') === 'decimal' ? 0.1 : 1;
+      }
+
+      if (current == null) current = min == null ? 0 : min;
+
+      var next = current + step * direction;
+      if (min != null) next = Math.max(min, next);
+      if (max != null) next = Math.min(max, next);
+
+      var value = next.toFixed(stepDecimals(step));
+      if (input.type !== 'number') value = value.replace('.', ',');
+      input.value = value;
+
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.focus();
+    }
+
+    function enhanceNumericInputs(scope) {
+      if (!scope || !scope.querySelectorAll) return;
+
+      Array.prototype.slice.call(scope.querySelectorAll('input.gcfg__input')).forEach(function (input) {
+        var numeric = input.type === 'number' || input.getAttribute('inputmode') === 'decimal';
+        if (!numeric || input.__gcfgStepper) return;
+
+        var host = input.parentElement;
+        if (!host) return;
+
+        var labelScope = host.closest ? (host.closest('.gcfg__metric') || host) : host;
+        var label = labelScope.querySelector('.gcfg__label, .gcfg__metricLabel, span');
+        var labelText = label ? String(label.textContent || '').trim() : 'waarde';
+        var wrapper = document.createElement('div');
+        var controls = document.createElement('div');
+        var up = document.createElement('button');
+        var down = document.createElement('button');
+
+        wrapper.className = 'gcfg__number';
+        controls.className = 'gcfg__stepper';
+
+        up.type = 'button';
+        up.className = 'gcfg__stepperBtn';
+        up.setAttribute('aria-label', labelText + ' verhogen');
+        up.setAttribute('title', 'Verhogen');
+        up.innerHTML = '&#9650;';
+
+        down.type = 'button';
+        down.className = 'gcfg__stepperBtn';
+        down.setAttribute('aria-label', labelText + ' verlagen');
+        down.setAttribute('title', 'Verlagen');
+        down.innerHTML = '&#9660;';
+
+        host.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+        controls.appendChild(up);
+        controls.appendChild(down);
+        wrapper.appendChild(controls);
+
+        up.addEventListener('click', function () {
+          adjustNumericInput(input, 1);
+        });
+
+        down.addEventListener('click', function () {
+          adjustNumericInput(input, -1);
+        });
+
+        input.__gcfgStepper = true;
+      });
+    }
+
     function shapeControlsHtml() {
       return (
         '<div class="gcfg__shapeBlock" data-shape-controls>' +
@@ -479,8 +563,8 @@
           '<div class="gcfg__shapePrompt" data-shape-prompt>Kies een vorm om de maatvelden te openen.</div>' +
 
           '<div class="gcfg__row gcfg__row--2" data-show-for="rect manhole">' +
-            fieldBlock('Buitenlengte / breedte mm *', 'outerW', 'text', 'inputmode="decimal" placeholder="bijv. 220"') +
-            fieldBlock('Buitenhoogte mm *', 'outerH', 'text', 'inputmode="decimal" placeholder="bijv. 140"') +
+            fieldBlock('Totale buitenlengte mm *', 'outerW', 'text', 'inputmode="decimal" placeholder="bijv. 400"') +
+            fieldBlock('Totale buitenbreedte mm *', 'outerH', 'text', 'inputmode="decimal" placeholder="bijv. 200"') +
           '</div>' +
 
           '<div class="gcfg__row" data-show-for="rect">' +
@@ -508,9 +592,12 @@
             fieldBlock('Binnenradius mm', 'innerRadius', 'text', 'inputmode="decimal" placeholder="bijv. 8"') +
           '</div>' +
 
-          '<div class="gcfg__row gcfg__row--2" data-show-for="manhole">' +
-            fieldBlock('Binnenlengte mm *', 'innerW', 'text', 'inputmode="decimal" placeholder="bijv. 160"') +
-            fieldBlock('Binnenhoogte mm *', 'innerH', 'text', 'inputmode="decimal" placeholder="bijv. 80"') +
+          '<div class="gcfg__row" data-show-for="manhole">' +
+            fieldBlock('Pakkingbreedte rondom mm *', 'ringWidth', 'text', 'inputmode="decimal" placeholder="bijv. 25"') +
+          '</div>' +
+
+          '<div class="gcfg__derived" data-show-for="manhole" data-manhole-derived>' +
+            'Vul de buitenmaat en pakkingbreedte in; de binnenmaat wordt automatisch berekend.' +
           '</div>' +
         '</div>'
       );
@@ -548,29 +635,13 @@
       if (qtyRow) qtyRow.setAttribute('data-requires-shape', 'true');
 
       item.__gcfgShapeReady = true;
-      syncShapeUI(item, true);
+      syncShapeUI(item);
     }
 
-    function fieldValue(el) {
-      return el && el.value != null ? String(el.value).trim() : '';
-    }
-
-    function seedShapeFields(item) {
-      var f = itemFields(item);
-
-      if (!fieldValue(f.outerW) && fieldValue(f.od)) f.outerW.value = f.od.value;
-      if (!fieldValue(f.outerH) && fieldValue(f.od)) f.outerH.value = f.od.value;
-      if (!fieldValue(f.innerDia) && fieldValue(f.id)) f.innerDia.value = f.id.value;
-      if (!fieldValue(f.innerW) && fieldValue(f.id)) f.innerW.value = f.id.value;
-      if (!fieldValue(f.innerH) && fieldValue(f.id)) f.innerH.value = f.id.value;
-    }
-
-    function syncShapeUI(item, skipSeed) {
+    function syncShapeUI(item) {
       var f = itemFields(item);
       var shape = f.shape && f.shape.value ? f.shape.value : '';
       var innerShape = f.innerShape && f.innerShape.value ? f.innerShape.value : 'circle';
-
-      if (!skipSeed) seedShapeFields(item);
 
       item.setAttribute('data-shape', shape);
       item.setAttribute('data-inner-shape', innerShape);
@@ -599,6 +670,26 @@
       Array.prototype.slice.call(item.querySelectorAll('[data-shape-prompt]')).forEach(function (el) {
         el.hidden = !!shape;
       });
+
+      var manholeDerived = item.querySelector('[data-manhole-derived]');
+
+      if (manholeDerived && shape === 'manhole') {
+        var outerW = val(f.outerW);
+        var outerH = val(f.outerH);
+        var ringWidth = val(f.ringWidth);
+        var innerW = outerW - ringWidth * 2;
+        var innerH = outerH - ringWidth * 2;
+
+        if (outerW > 0 && outerH > 0 && ringWidth > 0 && innerW > 0 && innerH > 0) {
+          manholeDerived.textContent =
+            'Automatische binnenmaat: ' + fmt(innerW, 1) + ' x ' + fmt(innerH, 1) + ' mm.';
+          manholeDerived.classList.remove('is-invalid');
+        } else {
+          manholeDerived.textContent =
+            'Vul de buitenmaat en pakkingbreedte in; de binnenmaat wordt automatisch berekend.';
+          manholeDerived.classList.toggle('is-invalid', ringWidth > 0 && (innerW <= 0 || innerH <= 0));
+        }
+      }
     }
 
     function itemFields(item) {
@@ -614,6 +705,7 @@
         innerW: item.querySelector('[data-field="innerW"]'),
         innerH: item.querySelector('[data-field="innerH"]'),
         innerRadius: item.querySelector('[data-field="innerRadius"]'),
+        ringWidth: item.querySelector('[data-field="ringWidth"]'),
         pcd: item.querySelector('[data-field="pcd"]'),
         holes: item.querySelector('[data-field="holes"]'),
         holeDia: item.querySelector('[data-field="holeDia"]'),
@@ -642,6 +734,7 @@
       var innerH = innerShape === 'rect' || innerShape === 'manhole' ? val(f.innerH) : innerDia;
       var outerRadius = val(f.outerRadius);
       var innerRadius = val(f.innerRadius);
+      var ringWidth = val(f.ringWidth);
       var pcd = val(f.pcd);
       var holes = Math.max(0, Math.round(val(f.holes)));
       var holeDia = val(f.holeDia);
@@ -663,7 +756,9 @@
           : clampRadius(outerW, outerH, outerRadius);
 
         if (shape === 'manhole') {
-          if (!(innerW > 0) || !(innerH > 0) || innerW >= outerW || innerH >= outerH) return null;
+          if (!(ringWidth > 0) || ringWidth * 2 >= Math.min(outerW, outerH)) return null;
+          innerW = outerW - ringWidth * 2;
+          innerH = outerH - ringWidth * 2;
           innerDia = Math.max(innerW, innerH);
           innerRadius = Math.min(innerW, innerH) / 2;
         } else if (innerShape === 'circle') {
@@ -696,6 +791,7 @@
         innerW: innerW,
         innerH: innerH,
         innerRadius: innerRadius,
+        ringWidth: ringWidth,
         pcd: pcd,
         holes: holes,
         holeDia: holeDia,
@@ -810,6 +906,7 @@
       if (defaults.innerW != null && f.innerW) f.innerW.value = defaults.innerW;
       if (defaults.innerH != null && f.innerH) f.innerH.value = defaults.innerH;
       if (defaults.innerRadius != null && f.innerRadius) f.innerRadius.value = defaults.innerRadius;
+      if (defaults.ringWidth != null && f.ringWidth) f.ringWidth.value = defaults.ringWidth;
       if (defaults.pcd != null) f.pcd.value = defaults.pcd;
       if (defaults.holes != null) f.holes.value = defaults.holes;
       if (defaults.holeDia != null) f.holeDia.value = defaults.holeDia;
@@ -823,7 +920,8 @@
       els.itemsWrap.appendChild(node);
       prepareItemShapeUI(node);
       applyDefaultsToItem(node, defaults);
-      syncShapeUI(node, true);
+      syncShapeUI(node);
+      enhanceNumericInputs(node);
 
       var previewBtn = node.querySelector('[data-preview]');
       var removeBtn = node.querySelector('[data-remove]');
@@ -963,8 +1061,15 @@
         if (drawingEls.ringInnerPath) drawingEls.ringInnerPath.setAttribute('d', innerPath);
       }
 
-      drawDiameterDimension(drawingEls.odExtL, drawingEls.odExtR, drawingEls.odLine, drawingEls.odText, cx - outerW / 2, cx + outerW / 2, cy, 62, fmt(it.outerW, 1) + ' mm', cx, -10);
-      drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy, 96, fmt(it.innerW, 1) + ' mm', cx, -10);
+      var outerDimensionLabel = it.shape === 'circle'
+        ? fmt(it.outerW, 1) + ' mm'
+        : fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1) + ' mm';
+      var innerDimensionLabel = it.innerShape === 'circle'
+        ? 'Ø ' + fmt(it.innerW, 1) + ' mm'
+        : fmt(it.innerW, 1) + ' x ' + fmt(it.innerH, 1) + ' mm';
+
+      drawDiameterDimension(drawingEls.odExtL, drawingEls.odExtR, drawingEls.odLine, drawingEls.odText, cx - outerW / 2, cx + outerW / 2, cy, 62, outerDimensionLabel, cx, -10);
+      drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy, 96, innerDimensionLabel, cx, -10);
 
       drawBoltPattern({
         cx: cx,
@@ -1325,15 +1430,20 @@
 
       warn(els.warnBox, '');
 
+      var itemNodes = $all('[data-gasket-item]');
       var items = readItems();
+      var hasUnchosenShape = itemNodes.some(function (item) {
+        var shapeField = item.querySelector('[data-field="shape"]');
+        return shapeField && !shapeField.value;
+      });
 
-      if (!items.length) {
-        var hasUnchosenShape = $all('[data-gasket-item]').some(function (item) {
-          var shapeField = item.querySelector('[data-field="shape"]');
-          return shapeField && !shapeField.value;
-        });
+      if (hasUnchosenShape) {
+        warn(els.warnBox, I18N.choose_shape);
+        return;
+      }
 
-        warn(els.warnBox, hasUnchosenShape ? I18N.choose_shape : I18N.no_items);
+      if (!items.length || items.length !== itemNodes.length) {
+        warn(els.warnBox, itemNodes.length ? I18N.invalid : I18N.no_items);
         return;
       }
 
@@ -1480,19 +1590,13 @@
             resultMetric('Plaatmateriaal', fmt(chargedAreaM2, 3) + ' m²', money(data.materialCost), restSummary) +
             resultMetric('Tijd', fmt(data.totalMinutes, 1) + ' min', money(data.laborCost), 'Totale machine-/arbeidstijd en tijdkosten.') +
             resultMetric('Kostprijs', money(data.subtotal), 'materiaal + tijd', 'Exclusief marge; minimum orderbedrag staat hieronder bij details.') +
-            resultMetric('Verkoopprijs', '<span data-gcfg-value="salePrice">' + money(data.totalCost) + '</span>', 'totaal', 'Aanpasbaar via de velden hieronder.') +
+            editableResultMetric('Verkoopprijs', 'salePrice', num(data.totalCost, 2), '0.01', '€', '', 'Klik op de waarde om de verkoopprijs aan te passen.') +
+            editableResultMetric('Marge', 'marginPct', num(marginPct, 2), '0.1', '', '%', 'Past live mee met de verkoopprijs.') +
+            editableResultMetric('Marge', 'marginEuro', num(marginEuro, 2), '0.01', '€', '', 'Marge in euro voor de hele bestelling.') +
           '</div>' +
 
-          '<div class="gcfg__pricingControls">' +
-            priceControl('Verkoopprijs totaal €', 'salePrice', num(data.totalCost, 2), '0.01') +
-            priceControl('Marge %', 'marginPct', num(marginPct, 2), '0.1') +
-            priceControl('Marge €', 'marginEuro', num(marginEuro, 2), '0.01') +
-          '</div>' +
-
-          '<div class="gcfg__marginLine">' +
-            'Marge: <strong data-gcfg-value="marginPct">' + fmt(marginPct, 1) + '%</strong> / ' +
-            '<strong data-gcfg-value="marginEuro">' + money(marginEuro) + '</strong>' +
-            '<span data-gcfg-value="minimumWarning"></span>' +
+          '<div class="gcfg__resultNote" data-gcfg-value="minimumWarning">' +
+            'Gemiddeld per pakking: ' + money(data.averagePricePerPiece) + '.' +
           '</div>' +
 
           '<div class="gcfg__lineItems" data-gcfg-value="itemPrices">' +
@@ -1507,6 +1611,7 @@
           '</details>' +
         '</div>';
 
+      enhanceNumericInputs(els.priceResult);
       bindPricingControls(els.priceResult.querySelector('[data-gcfg-pricing]'), data);
     }
 
@@ -1521,12 +1626,17 @@
       );
     }
 
-    function priceControl(label, key, value, step) {
+    function editableResultMetric(label, key, value, step, prefix, suffix, hint) {
       return (
-        '<label class="gcfg__priceControl">' +
-          '<span>' + label + '</span>' +
-          '<input class="gcfg__input gcfg__priceInput" type="number" min="0" step="' + step + '" value="' + value + '" data-gcfg-input="' + key + '">' +
-        '</label>'
+        '<div class="gcfg__metric gcfg__metric--editable">' +
+          '<span class="gcfg__metricLabel">' + label + '</span>' +
+          '<span class="gcfg__editableValue">' +
+            (prefix ? '<span class="gcfg__valueAffix">' + prefix + '</span>' : '') +
+            '<input class="gcfg__input gcfg__priceInput" type="number" min="0" step="' + step + '" value="' + value + '" data-gcfg-input="' + key + '">' +
+            (suffix ? '<span class="gcfg__valueAffix">' + suffix + '</span>' : '') +
+          '</span>' +
+          '<span class="gcfg__metricHint">' + hint + '</span>' +
+        '</div>'
       );
     }
 
@@ -1541,12 +1651,16 @@
 
         return (
           '<div class="gcfg__lineItem">' +
-            '<strong>Pakking ' + line.index + ' (' + color.name + ')</strong>' +
-            '<span>' + escXml(line.label || 'Pakking') + '</span>' +
-            '<span>' + line.qty + ' stuks</span>' +
-            '<span>Kostprijs regel: ' + money(baseCost) + '</span>' +
-            '<span>Verkoop/stuk: <strong>' + money(piecePrice) + '</strong></span>' +
-            '<span>Regeltotaal: ' + money(lineTotal) + '</span>' +
+            '<div class="gcfg__lineMain">' +
+              '<strong>Pakking ' + line.index + ' (' + color.name + ')</strong>' +
+              '<span>' + escXml(line.label || 'Pakking') + '</span>' +
+            '</div>' +
+            '<div class="gcfg__lineMeta">' +
+              '<span>Aantal: <strong>' + line.qty + '</strong></span>' +
+              '<span>Kostprijs: <strong>' + money(baseCost) + '</strong></span>' +
+              '<span>Verkoop/stuk: <strong>' + money(piecePrice) + '</strong></span>' +
+              '<span>Regeltotaal: <strong>' + money(lineTotal) + '</strong></span>' +
+            '</div>' +
           '</div>'
         );
       }).join('');
@@ -1558,9 +1672,6 @@
       var saleInput = container.querySelector('[data-gcfg-input="salePrice"]');
       var marginPctInput = container.querySelector('[data-gcfg-input="marginPct"]');
       var marginEuroInput = container.querySelector('[data-gcfg-input="marginEuro"]');
-      var saleValue = container.querySelector('[data-gcfg-value="salePrice"]');
-      var marginPctValue = container.querySelector('[data-gcfg-value="marginPct"]');
-      var marginEuroValue = container.querySelector('[data-gcfg-value="marginEuro"]');
       var itemPrices = container.querySelector('[data-gcfg-value="itemPrices"]');
       var minimumWarning = container.querySelector('[data-gcfg-value="minimumWarning"]');
       var syncing = false;
@@ -1589,15 +1700,12 @@
 
         syncing = false;
 
-        if (saleValue) saleValue.textContent = money(salePrice);
-        if (marginPctValue) marginPctValue.textContent = fmt(marginPct, 1) + '%';
-        if (marginEuroValue) marginEuroValue.textContent = money(marginEuro);
         if (itemPrices) itemPrices.innerHTML = renderItemPriceCards(data, salePrice);
 
         if (minimumWarning) {
           minimumWarning.textContent = salePrice < data.cfg.minOrder
-            ? ' Let op: onder minimum orderbedrag (' + money(data.cfg.minOrder) + ').'
-            : ' Gemiddeld per pakking: ' + money(average) + '.';
+            ? 'Let op: onder minimum orderbedrag (' + money(data.cfg.minOrder) + ').'
+            : 'Gemiddeld per pakking: ' + money(average) + '.';
         }
       }
 
@@ -2032,6 +2140,7 @@
     }
 
     updateStaticCopy();
+    enhanceNumericInputs(root);
     addItem();
     applyVariant();
     bindEvents();
