@@ -622,9 +622,8 @@
                 fieldBlock('Boutsteek (PCD) mm', 'pcd', 'text', 'inputmode="decimal" placeholder="automatisch in het midden"') +
                 fieldBlock('Aantal gaten', 'holes', 'number', 'min="1" step="1" value="8"') +
               '</div>' +
-              '<div class="gcfg__row gcfg__row--2" data-show-for="circle" data-pattern-show-for="bolt-circle">' +
+              '<div class="gcfg__row" data-show-for="circle" data-pattern-show-for="bolt-circle">' +
                 fieldBlock('Gatdiameter Ø mm', 'holeDia', 'text', 'inputmode="decimal" value="12"') +
-                fieldBlock('Positie eerste gat °', 'startAngle', 'number', 'step="1" value="-90"') +
               '</div>' +
 
               '<div class="gcfg__row gcfg__row--2" data-show-for="rect">' +
@@ -835,7 +834,6 @@
         pcd: field('pcd'),
         holes: field('holes'),
         holeDia: field('holeDia'),
-        startAngle: field('startAngle'),
         edgeOffset: field('edgeOffset'),
         holeSpacing: field('holeSpacing'),
         startOffset: field('startOffset'),
@@ -1019,7 +1017,6 @@
       var pcd = val(f.pcd);
       var requestedHoleCount = Math.max(0, Math.round(val(f.holes)));
       var holeDia = patternHasExtraHoles(holePattern) ? val(f.holeDia) : 0;
-      var startAngle = extractNumber(f.startAngle && f.startAngle.value);
       var edgeOffset = extractNumber(f.edgeOffset && f.edgeOffset.value);
       var holeSpacing = val(f.holeSpacing);
       var startOffset = val(f.startOffset);
@@ -1102,7 +1099,7 @@
         holes: 0,
         requestedHoleCount: holePattern === 'corners' ? 4 : requestedHoleCount,
         holeDia: holeDia,
-        startAngle: startAngle == null ? -90 : startAngle,
+        startAngle: -90,
         edgeOffset: edgeOffset == null ? 0 : edgeOffset,
         holeSpacing: holeSpacing,
         startOffset: startOffset,
@@ -1229,7 +1226,6 @@
       if (defaults.pcd != null && f.pcd) f.pcd.value = defaults.pcd;
       if (defaults.holes != null && f.holes) f.holes.value = defaults.holes;
       if (defaults.holeDia != null && f.holeDia) f.holeDia.value = defaults.holeDia;
-      if (defaults.startAngle != null && f.startAngle) f.startAngle.value = defaults.startAngle;
       if (defaults.edgeOffset != null && f.edgeOffset) f.edgeOffset.value = defaults.edgeOffset;
       if (defaults.holeSpacing != null && f.holeSpacing) f.holeSpacing.value = defaults.holeSpacing;
       if (defaults.startOffset != null && f.startOffset) f.startOffset.value = defaults.startOffset;
@@ -1432,15 +1428,18 @@
       }
 
       var outerDimensionLabel = it.shape === 'circle'
-        ? fmt(it.outerW, 1) + ' mm'
-        : fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1) + ' mm';
+        ? 'Buiten Ø ' + fmt(it.outerW, 1) + ' mm'
+        : 'Buiten ' + fmt(it.outerW, 1) + ' x ' + fmt(it.outerH, 1) + ' mm';
       var innerDimensionLabel = it.innerShape === 'circle'
-        ? 'Ø ' + fmt(it.innerW, 1) + ' mm'
-        : fmt(it.innerW, 1) + ' x ' + fmt(it.innerH, 1) + ' mm';
+        ? 'Binnen Ø ' + fmt(it.innerW, 1) + ' mm'
+        : 'Binnen ' + fmt(it.innerW, 1) + ' x ' + fmt(it.innerH, 1) + ' mm';
+      var outerTop = cy - outerH / 2;
+      var outerBottom = cy + outerH / 2;
+      var outerDimensionY = Math.max(46, outerTop - 42);
 
-      drawDiameterDimension(drawingEls.odExtL, drawingEls.odExtR, drawingEls.odLine, drawingEls.odText, cx - outerW / 2, cx + outerW / 2, cy, 62, outerDimensionLabel, cx, -10);
+      drawDiameterDimension(drawingEls.odExtL, drawingEls.odExtR, drawingEls.odLine, drawingEls.odText, cx - outerW / 2, cx + outerW / 2, outerTop, outerDimensionY, outerDimensionLabel, cx, -10);
       if (it.hasCenterHole) {
-        drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy, 96, innerDimensionLabel, cx, -10);
+        drawDiameterDimension(drawingEls.idExtL, drawingEls.idExtR, drawingEls.idLine, drawingEls.idText, cx - innerW / 2, cx + innerW / 2, cy + innerH / 2, outerBottom + 42, innerDimensionLabel, cx, 16);
       }
 
       drawBoltPattern({
