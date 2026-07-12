@@ -32,13 +32,15 @@
 }
 
 .gcfg .gcfg__form,
+.gcfg .gcfg__output,
 .gcfg .gcfg__preview {
   min-width: 0;
 }
 
-.gcfg .gcfg__preview {
-  position: sticky;
-  top: 18px;
+.gcfg .gcfg__output {
+  display: grid;
+  gap: 20px;
+  align-content: start;
 }
 
 @media (max-width: 980px) {
@@ -48,10 +50,6 @@
 
   .gcfg .gcfg__grid {
     grid-template-columns: 1fr;
-  }
-
-  .gcfg .gcfg__preview {
-    position: static;
   }
 
   .gcfg .gcfg__row--2 {
@@ -780,9 +778,8 @@
 }
 
 .gcfg .gcfg__calc {
-  grid-column: 1 / -1;
   width: 100%;
-  margin: 4px auto 0;
+  margin: 0;
 }
 
 .gcfg .gcfg__calcGrid {
@@ -971,6 +968,12 @@
 
   .gcfg .gcfg__summaryGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 981px) and (max-width: 1240px) {
+  .gcfg .gcfg__calcGrid {
+    grid-template-columns: 1fr;
   }
 }
 
