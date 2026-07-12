@@ -106,7 +106,6 @@
       minOrder: bySuffix('-minOrder'),
       remainderMode: bySuffix('-remainderMode'),
 
-      calcBtn: bySuffix('-calc'),
       calcBox: bySuffix('-calcBox'),
       priceResult: bySuffix('-priceResult'),
       nestSvg: bySuffix('-nestSvg'),
@@ -166,12 +165,13 @@
 
     var activeItem = null;
     var renderFrame = null;
+    var autoCalcTimer = null;
 
     function updateStaticCopy() {
       var replacements = {
         'Pakkingregels': 'Vorm & maten',
         'Voeg één of meerdere pakkingen toe.': 'Kies eerst de vorm; daarna vul je de bijbehorende maten in.',
-        'Vul de pakkingregels en kosten in. Klik daarna op prijs berekenen.': 'Kies materiaal, vorm en maten. Klik daarna op prijs berekenen.'
+        'Vul de pakkingregels en kosten in. Klik daarna op prijs berekenen.': 'Kies materiaal, vorm en maten. Het resultaat wordt automatisch bijgewerkt.'
       };
 
       function walk(node) {
@@ -967,6 +967,7 @@
 
           updateItemTitles();
           renderActivePreview();
+          scheduleAutoCalculation();
         });
       }
 
@@ -976,6 +977,7 @@
           if (f.shape) f.shape.value = btn.getAttribute('data-shape-choice') || 'circle';
           syncShapeUI(node);
           if (node === activeItem) scheduleRender();
+          scheduleAutoCalculation();
         });
       });
 
@@ -1257,6 +1259,20 @@
       });
     }
 
+    function hideCalculatedResult() {
+      warn(els.warnBox, '');
+      if (els.calcBox) els.calcBox.hidden = true;
+    }
+
+    function scheduleAutoCalculation() {
+      if (autoCalcTimer) window.clearTimeout(autoCalcTimer);
+
+      autoCalcTimer = window.setTimeout(function () {
+        autoCalcTimer = null;
+        calculatePrice(null, { automatic: true });
+      }, 450);
+    }
+
     function outerArea(it) {
       if (it.shape === 'circle') return circleArea(it.od);
 
@@ -1324,9 +1340,9 @@
     }
 
     function readCostSettings() {
-      var remainderMode = els.remainderMode && els.remainderMode.value
-        ? els.remainderMode.value
-        : 'charge';
+      var remainderMode = !els.remainderMode || els.remainderMode.checked
+        ? 'charge'
+        : 'discard';
 
       var nestingOptions = {
         materialMode: remainderMode === 'discard' ? 'used_strip' : 'full_plate',
@@ -1446,8 +1462,10 @@
       return lines;
     }
 
-    function calculatePrice(event) {
+    function calculatePrice(event, options) {
       if (event) event.preventDefault();
+
+      options = options || {};
 
       warn(els.warnBox, '');
 
@@ -1459,12 +1477,14 @@
       });
 
       if (hasUnchosenShape) {
-        warn(els.warnBox, I18N.choose_shape);
+        hideCalculatedResult();
+        if (!options.automatic) warn(els.warnBox, I18N.choose_shape);
         return;
       }
 
       if (!items.length || items.length !== itemNodes.length) {
-        warn(els.warnBox, itemNodes.length ? I18N.invalid : I18N.no_items);
+        hideCalculatedResult();
+        if (!options.automatic) warn(els.warnBox, itemNodes.length ? I18N.invalid : I18N.no_items);
         return;
       }
 
@@ -1473,6 +1493,7 @@
           partial: I18N.bolt_partial,
           noFit: I18N.bolt_no_fit
         })) {
+          if (options.automatic) hideCalculatedResult();
           return;
         }
       }
@@ -1484,11 +1505,13 @@
         : Nesting.packMixedSmart(items, cfg.W, cfg.H, cfg.edge, cfg.gap, cfg.nestingOptions);
 
       if (packing.notFit && packing.notFit.length) {
+        hideCalculatedResult();
         warn(els.warnBox, I18N.no_fit);
         return;
       }
 
       if (!packing.plates || !packing.plates.length) {
+        hideCalculatedResult();
         warn(els.warnBox, I18N.no_fit);
         return;
       }
@@ -1579,7 +1602,7 @@
       if (els.calcBox) {
         els.calcBox.hidden = false;
 
-        if (els.calcBox.scrollIntoView) {
+        if (!options.automatic && els.calcBox.scrollIntoView) {
           els.calcBox.scrollIntoView({
             behavior: 'smooth',
             block: 'start'
@@ -2132,12 +2155,23 @@
       if (els.addItemBtn) {
         els.addItemBtn.addEventListener('click', function () {
           addItem();
+          scheduleAutoCalculation();
         });
       }
 
-      if (els.calcBtn) {
-        els.calcBtn.addEventListener('click', calculatePrice);
-      }
+      root.addEventListener('input', function (event) {
+        var target = event.target;
+        if (!target || !target.matches('input, select')) return;
+        if (target.closest('[data-gcfg-pricing]')) return;
+        scheduleAutoCalculation();
+      });
+
+      root.addEventListener('change', function (event) {
+        var target = event.target;
+        if (!target || !target.matches('input, select')) return;
+        if (target.closest('[data-gcfg-pricing]')) return;
+        scheduleAutoCalculation();
+      });
 
       if (els.dxfBtn) {
         els.dxfBtn.addEventListener('click', function () {
