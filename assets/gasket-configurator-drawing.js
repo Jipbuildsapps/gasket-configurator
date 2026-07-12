@@ -90,7 +90,7 @@ window.GasketConfiguratorDrawing = (function () {
         '" stroke-width="1" />';
     }
 
-    if (shape === 'circle' && ri > 0) {
+    if (shape === 'circle' && item.hasCenterHole !== false && ri > 0) {
       html +=
         '<circle cx="' +
         cx +
@@ -103,8 +103,8 @@ window.GasketConfiguratorDrawing = (function () {
         '" stroke-width="1" />';
     }
 
-    if (shape !== 'circle') {
-      if (innerShape !== 'circle') {
+    if (shape !== 'circle' && item.hasCenterHole !== false) {
+      if (innerShape !== 'circle' && innerW > 0 && innerH > 0) {
         html +=
           '<rect x="' +
           (cx - innerW / 2) +
@@ -133,25 +133,30 @@ window.GasketConfiguratorDrawing = (function () {
       }
     }
 
-    if (shape === 'circle' && p.pcd > 0 && p.holes > 0 && p.holeDia > 0) {
-      var rp = (p.pcd / 2) * scale;
-      var rh = (p.holeDia / 2) * scale;
+    var holeCenters = item.holeCenters || [];
+    var rotationRad = isRotated ? Math.PI / 2 : 0;
 
-      for (var h = 0; h < p.holes; h++) {
-        var a = -Math.PI / 2 + (Math.PI * 2 * h) / p.holes;
+    holeCenters.forEach(function (hole) {
+      var hx = hole.x;
+      var hy = hole.y;
 
-        html +=
-          '<circle cx="' +
-          (cx + rp * Math.cos(a)) +
-          '" cy="' +
-          (cy + rp * Math.sin(a)) +
-          '" r="' +
-          rh +
-          '" fill="#fff" stroke="' +
-          c.stroke +
-          '" stroke-width=".8" />';
+      if (rotationRad) {
+        var rotatedX = -hy;
+        hy = hx;
+        hx = rotatedX;
       }
-    }
+
+      html +=
+        '<circle cx="' +
+        (cx + hx * scale) +
+        '" cy="' +
+        (cy + hy * scale) +
+        '" r="' +
+        (hole.r * scale) +
+        '" fill="#fff" stroke="' +
+        c.stroke +
+        '" stroke-width=".8" />';
+    });
 
     if (p.placedInHole) {
       if (shape === 'circle') {
@@ -435,8 +440,10 @@ window.GasketConfiguratorDrawing = (function () {
     return html;
   }
 
-  function drawNest(nestSvg, W, H, packing, items, edge, nestingApi) {
+  function drawNest(nestSvg, W, H, packing, items, edge, nestingApi, options) {
     if (!nestSvg || !packing || !packing.plates || !packing.plates.length) return;
+
+    options = options || {};
 
     var plates = packing.plates.filter(function (pl) {
       return pl.placed && pl.placed.length;
@@ -446,20 +453,9 @@ window.GasketConfiguratorDrawing = (function () {
 
     var svgWidth = 1000;
     var blockHeight = 720;
-    var maxVisiblePlates = 4;
-    var plateEntries = plates.map(function (plate, index) {
-      return { plate: plate, number: index + 1 };
-    });
-
-    if (plateEntries.length > maxVisiblePlates) {
-      plateEntries = plateEntries.slice(0, maxVisiblePlates - 1).concat([
-        plateEntries[plateEntries.length - 1]
-      ]);
-    }
-
-    var omittedCount = Math.max(0, plates.length - plateEntries.length);
-    var omittedHeight = omittedCount > 0 ? 42 : 0;
-    var height = plateEntries.length * blockHeight + omittedHeight + 72;
+    var plateIndex = Math.max(0, Math.min(plates.length - 1, Math.floor(Number(options.plateIndex || 0))));
+    var plate = plates[plateIndex];
+    var height = blockHeight + 72;
 
     nestSvg.setAttribute('viewBox', '0 0 ' + svgWidth + ' ' + height);
 
@@ -470,29 +466,18 @@ window.GasketConfiguratorDrawing = (function () {
       height +
       '" fill="#fff" />';
 
-    plateEntries.forEach(function (entry, index) {
-      html += drawPlateBlock(
-        svgWidth,
-        blockHeight,
-        W,
-        H,
-        entry.plate,
-        plates.length > 1 ? 'Plaat ' + entry.number + ' van ' + plates.length : 'Plaatindeling',
-        index * blockHeight,
-        false,
-        edge,
-        nestingApi
-      );
-    });
-
-    if (omittedCount > 0) {
-      html +=
-        '<text x="55" y="' +
-        (plateEntries.length * blockHeight + 25) +
-        '" font-size="15" font-weight="700" fill="rgba(0,0,0,.62)">' +
-        omittedCount +
-        ' tussenliggende platen niet apart getoond</text>';
-    }
+    html += drawPlateBlock(
+      svgWidth,
+      blockHeight,
+      W,
+      H,
+      plate,
+      plates.length > 1 ? 'Plaat ' + (plateIndex + 1) + ' van ' + plates.length : 'Plaatindeling',
+      0,
+      false,
+      edge,
+      nestingApi
+    );
 
     html += drawLegend(items, height - 30, false);
 
